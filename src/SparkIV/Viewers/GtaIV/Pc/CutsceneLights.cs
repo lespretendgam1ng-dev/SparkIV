@@ -106,6 +106,14 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
             continue;
           }
           var at = Vector3.Transform(light.Position, obj.Place);
+          // A lamp the same as one already taken (another object at the same place: the same radius and flags within
+          // 1 cm) only once (#149). GTA IV (PC) makes such a light once: GTAIV.1.trace, bc_3 s1 (frames ending at calls
+          // 88304519, 99887039, 107563481), each of the harbour's floodlights (r 30, r 26.4) drawn at most once, where
+          // SparkIV had every one twice. Visual test: bc_3 up to -0.38.
+          if (_lamps.Any(l => Vector3.DistanceSquared(l.At, at) < 1e-4f && l.Radius == range && l.Flags == light.Flags))
+          {
+            continue;
+          }
           var way = Vector3.TransformNormal(light.Direction, obj.Place);
           way = way.LengthSquared() > 1e-8f ? Vector3.Normalize(way) : new Vector3(0, 0, -1);
           float cone = light.Spot ? light.Falloff : 0;

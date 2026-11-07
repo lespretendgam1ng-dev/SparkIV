@@ -55,6 +55,19 @@ The fields at +0x30 and +0x34 (RageLib's `Unknown2C`, `Unknown30`) are the light
     `shd…` lights keep the rule above in SparkIV (location only), see there. The native renderer follows this; the
     page (`ModelView.html`) still has the rule above.
 
+### The same lamp twice (#149, 2026-11-08)
+
+bc_3's harbour has objects that stand at the same place with the same 2dfx lights (the floodlights, r 30 and r 26.4:
+each came twice in SparkIV). The game makes such a light once: `GTAIV.1.trace`, bc_3 s1, the frames ending at calls
+88304519, 99887039 and 107563481 (lampbisect `-LampPS auto -ListOnly`), each floodlight at most once. SparkIV takes a
+lamp the same as one already taken (same place within 1 cm, radius and flags) only once (`CutsceneLights`): bc_3 up to
+−0.38 (s2 f1307), none worse. Which of the two objects is the game's is not checked (same light either way).
+
+Open (#149): in those frames the game draws none of the five orange wall lamps (`BM_wall_light_02`, 0xac060, shadow
+lamps) by the steps at f292.5 and f588.25, but two of them through the shadow-lamp program at f854.75, with the camera
+almost where it was; SparkIV draws all of them in all three (their light makes the paving at f588.25 1160,324 warmer
+and brighter by +0.38 / +0.21 / +0.06). Which shadow lamps the game draws per frame is not known yet.
+
 ## Coronas
 
 Every 2dfx light also hands in a corona: a soft sprite facing the camera, added to the picture (#18). They can cover much of the frame: in bc_1 the one 1.2 m from the camera lay over the whole upper picture, which made Bernie's flat look 8–9 % too dark "without lights". With the corona draw left out of the game's frame, the game's picture equals SparkIV's across the room.
