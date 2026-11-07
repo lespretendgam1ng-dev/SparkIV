@@ -780,7 +780,9 @@ PsOut Shade(VsOut input, bool deferred, bool solid = false)
     {
       a = saturate(a / ((d.Material.x - 0.5) / 0.4));
     }
-    if (a < 0.01)
+    // (Not the map's forward see-through materials (#142): the game draws them with its alpha test ALWAYS, writing
+    // depth even where the texture is clear, so what lies behind in the same mesh, drawn later, stays hidden.)
+    if (a < 0.01 && (bits & FForwardLit) == 0)
     {
       discard;
     }
