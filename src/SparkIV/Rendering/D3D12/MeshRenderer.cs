@@ -207,6 +207,8 @@ static const uint FNormal = 1, FSpec = 2, FSpecFlat = 4, FEnv = 8, FEnvSpec = 16
   FTextured = 16384, FFixedAlpha = 32768, FForwardLit = 65536, FRawAo = 131072, FGlowOver = 262144;
 
 // The stipple's share kept per level (stipple.wtd all_stips: of 64) and a vehicle lamp's dimmers (by its vertex alpha).
+// Hair (#135): how squarely it must face the camera for its soft edge (|n.v|; the outline keeps the hard cut).
+static const float HAIRFACE = 0.75;
 static const float Kept[16] = { 0, 6, 8, 12, 11, 12, 16, 24, 32, 40, 48, 52, 52, 56, 58, 64 };
 static const float Dimmers[15] = { 10, 10, 10, 9, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 
@@ -553,9 +555,16 @@ PsOut Shade(VsOut input, bool deferred, bool solid = false)
     albedo = vc;
   }
   // Cut out: the page's test (texture alpha x vertex alpha at most 45/255 goes; a tree by half, for its stipple).
-  if (d.Material.x > 0.5)
+  // GTA IV (PC) hair (#135, MeshRenderer's HairSoft): Material.x 1 + t: solid from t where it faces the camera
+  // (|n.v| > HAIRFACE), else from 45/255; Material.x 0.5 + 0.4 t: its blended pass, only where it faces the camera.
+  float hairFacing = abs(dot(normalize(input.normal + 1e-6), normalize(f.Eye.xyz - input.world)));
+  if (d.Material.x > 0.5 && d.Material.x < 1)
   {
-    clip(alpha - (tree ? 0.5 : 0.17648));
+    clip(hairFacing - HAIRFACE);
+  }
+  else if (d.Material.x > 0.5)
+  {
+    clip(alpha - (tree ? 0.5 : d.Material.x > 1.0001 && hairFacing > HAIRFACE ? d.Material.x - 1 : 0.17648));
   }
   // The normal: peds and vehicles turned to the camera (seen from inside: the side facing it), then bent by the
   // normal map: with tangents the tangent frame (and, written to the G-buffer, rounded as the game stores it);
@@ -766,6 +775,11 @@ PsOut Shade(VsOut input, bool deferred, bool solid = false)
   else if (textureAlpha)
   {
     a = (bits & FVehLights) != 0 ? baseA : alpha;
+    // Hair's blended pass (Material.x = 0.5 + 0.4 t, #135): alpha / t, full where its solid pass starts.
+    if (d.Material.x > 0.5 && d.Material.x < 1)
+    {
+      a = saturate(a / ((d.Material.x - 0.5) / 0.4));
+    }
     if (a < 0.01)
     {
       discard;
@@ -1134,7 +1148,7 @@ float4 MirrorSurface(VsOut input, bool toMap)
   }
   if (d.Material.x > 0.5)
   {
-    clip(alpha - (tree ? 0.5 : 0.17648));
+    clip(alpha - (tree ? 0.5 : d.Material.x > 1.0001 ? d.Material.x - 1 : 0.17648));
   }
   // The vertex normal (the page's n before any bump), or the face's without one (Direct3D's screen y down: the
   // page's cross(dFdx, dFdy) turned round).
@@ -1527,8 +1541,11 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       public uint Start { get; }
       public uint Count { get; }
       public int Texture { get; }
-      public Pass Pass { get; }
-      public bool Cutout { get; }
+      public Pass Pass { get; init; }
+      public bool Cutout { get; init; }
+
+      /// <summary>Its own cut-out threshold (0: the usual 45 / 255).</summary>
+      public float CutAt { get; init; }
       public Vector3? DirtMask { get; }
     }
 
@@ -2501,6 +2518,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       var indices = new List<uint>();
       var parts = new List<Part>();
       var partData = new List<uint>();
+      float[] partFloats;
       List<ShapedRange>? shaped = null;
       var min = new Vector3(float.MaxValue);
       var max = new Vector3(float.MinValue);
@@ -2715,10 +2733,11 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         var sub = material.SubSurface is { Length: >= 5 } ss ? ss : null;
         float lampGlow = material.VehicleLights && look != null && look.LightsOn ? material.EmissiveMultiplier ?? 0 : 0;
         int partIndex = parts.Count;
-        AddPart(partData, new uint[] { (uint)texture, (uint)normal, (uint)specular, (uint)environment },
-                new uint[] { (uint)layer[0], (uint)layer[1], (uint)layer[2], (uint)dirtTexture },
+        var partTex = new uint[] { (uint)texture, (uint)normal, (uint)specular, (uint)environment };
+        var partTex2 = new uint[] { (uint)layer[0], (uint)layer[1], (uint)layer[2], (uint)dirtTexture };
+        AddPart(partData, partTex, partTex2,
                 new uint[] { (uint)flags, (uint)layers, layersOn, 0 },
-                new float[]
+                partFloats = new float[]
                 {
                   material.SpecularPower, material.SpecularIntensity, material.Bumpiness, material.Parallax,
                   mask.X, mask.Y, mask.Z, look?.ReflectivePower ?? material.ReflectivePower,
@@ -2779,6 +2798,18 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
           VertexBase = first,
           VertexCount = count,
         });
+        // GTA IV (PC) hair (#135): the game draws gta_hair_sorted_alpha_exp opaque into the G-buffer, then blended passes
+        // over it (SRCALPHA / INVSRCALPHA, GTAIV.trace bc_1 f940 from call 103011448; see docs fxc.md "Hair"), so the
+        // hairline fades into the skin. SparkIV approximates it: where the hair faces the camera solid only from alpha
+        // HairSoft (edge-on, at the outline, from 45 / 255 as before), and a second, blended pass as a decal (colour only,
+        // the skin's normal kept) by alpha / HairSoft. Tuned on intro s3 f1236.50 (Niko's hairline) against bc_3 (the
+        // back of his head): a higher HairSoft softens the hairline more but lightens the hair over the bc_3 references.
+        if (textured && pass == Pass.Solid && material.Shader.StartsWith("gta_hair", StringComparison.OrdinalIgnoreCase))
+        {
+          parts[^1] = parts[^1] with { CutAt = HairSoft, Cutout = true };
+          AddPart(partData, partTex, partTex2, new uint[] { (uint)(flags | PartFlags.TextureAlpha), (uint)layers, layersOn, 0 }, partFloats);
+          parts.Add(parts[^1] with { Pass = Pass.Decal, Cutout = true, CutAt = -0.5f + 0.4f * Math.Min(HairSoft, 1), Index = parts.Count, DirtFirst = false });
+        }
       }
       pending += textureBytes;
       if (indices.Count == 0)
@@ -2815,6 +2846,9 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     }
 
     // A part's PartData (see the shader): three uint4, then eight float4.
+    // GTA IV (PC) hair (gta_hair_*, #135): solid from this alpha where it faces the camera (see the hair parts above).
+    private const float HairSoft = 0.3f;
+
     private static void AddPart(List<uint> into, uint[] tex, uint[] tex2, uint[] bits, float[] numbers)
     {
       into.AddRange(tex);
@@ -4042,7 +4076,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
             litDrawn = !(apart && (instance.InRoom || nightGlass || glowGlass));
           }
           var mask = part.DirtMask ?? Vector3.Zero;
-          draw[20] = part.Cutout ? 1 : 0;
+          draw[20] = part.Cutout ? 1 + part.CutAt : 0;
           draw[21] = part.DirtMask != null ? 1 : 0;
           draw[22] = part.Kind;
           draw[23] = part.Glow;
@@ -4184,7 +4218,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
               list.SetGraphicsRoot32BitConstants(0, 20, draw, 0);
             }
             var mask = part.DirtMask ?? Vector3.Zero;
-            draw[20] = part.Cutout ? 1 : 0;
+            draw[20] = part.Cutout ? 1 + part.CutAt : 0;
             draw[21] = part.DirtMask != null ? 1 : 0;
             draw[22] = part.Kind;
             draw[23] = part.Glow;
@@ -4330,7 +4364,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
             list.SetGraphicsRoot32BitConstants(0, 20, draw, 0);
           }
           var mask = part.DirtMask ?? Vector3.Zero;
-          draw[20] = part.Cutout ? 1 : 0;
+          draw[20] = part.Cutout ? 1 + part.CutAt : 0;
           draw[21] = part.DirtMask != null ? 1 : 0;
           draw[22] = part.Kind;
           draw[23] = part.Glow;

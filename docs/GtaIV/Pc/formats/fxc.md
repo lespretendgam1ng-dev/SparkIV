@@ -124,6 +124,13 @@ stipple). SparkIV keeps cutting hair out at 45 / 255 all the same: cut only at a
 with a hard dark edge where the game's fade softly into the skin (the blended back-face passes), 7 of 49 references up
 to +0.06 worse (2026-11-01); hair not cut at all the same (+0.06).
 
+Since 2026-11-07 (#135) SparkIV approximates the blended passes: where the hair faces the camera (|n·v| > 0.75) it is
+solid only from alpha 0.3, and a second pass blends its colour over what is below (as a decal: colour only, the
+skin's normal kept) by alpha / 0.3; edge-on, at the outline, it stays cut at 45 / 255 (blended there it took the
+light of the wall behind: a dark rim). Tuned on intro s3 f1236.50 (Niko's hairline, 3.184 → 3.172) against bc_3
+(the back of his head; a solid threshold of 0.4-0.6 softened the hairline more but lightened the hair there). Status:
+**approximated**; how the game's passes give its exact fade is still open (see Open).
+
 ## Trees
 
 `gta_trees`' `deferred_draw` (ps 1) has no alpha threshold: the texture's alpha picks a level of
