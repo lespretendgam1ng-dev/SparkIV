@@ -307,7 +307,12 @@ it grows by the cloud speed × seconds / 120 (et01_ba f1292.25 to f1394.75: +0.0
 
 `globalFogColor` (the far fog, = `gtaWaterColor`, = water's `bottomSkyColour` × `.w`) is (SkyColor + AzimuthStrength ×
 AzimuthColor) × SkyLightMult: `GTAIV.trace` bc_1 8.144 / 9.262 / 10.094, `GTAIV.2.trace` et01_ba 7.349 / 10.971 /
-14.600, both exactly (`TimeCycle`'s `fog.farColor` since 2026-11-01).
+14.600, both exactly (`TimeCycle`'s `fog.farColor` since 2026-11-01) - both with NearFogAmount 0. **With a near fog
+amount it is eased towards `globalFogColorN` by it** (#138, 2026-11-07): lerp(far, `globalFogColorN`, `globalFogParams`.w).
+`GTAIV.3.trace` intro: `globalFogColorN` (0.594, 1.793, 2.810), the far colour (1.773, 2.028, 2.360); with c41.w = 0.3137
+(from call 6904871, s2 on) c42 = (1.403, 1.954, 2.501), with c41.w = 1/255 (call 4767124) (1.768, 2.027, 2.362) - both
+exactly the lerp. In SparkIV for the scene's fog (`CutsceneLighting`, `FogFar`); the sky's and the water's use of it not
+yet changed (not measured there).
 
 ## Format
 
