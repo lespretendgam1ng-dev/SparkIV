@@ -136,6 +136,9 @@ namespace SparkIV.WinUI.Viewers
     /// </summary>
     public float[]? BodyBoundsMin { get; private set; }
 
+    /// <summary>The same box's corner of greatest x, y, z (the bound's +0x10): the car's front for its headlight's light.</summary>
+    public float[]? BodyBoundsMax { get; private set; }
+
     /// <summary>A scene without models or textures, for shapes built elsewhere (collision).</summary>
     internal static ModelScene Empty(string name) => new ModelScene(name, new List<TextureFile>());
 
@@ -549,6 +552,7 @@ namespace SparkIV.WinUI.Viewers
             var body = fragment.GetDataModel();
             scene.AddDrawable(scene.Root, "Body", body, true);
             scene.BodyBoundsMin = fragment.GetBoundBoxMin();
+            scene.BodyBoundsMax = fragment.GetBoundBoxMax();
             scene.AddFragmentChildren(body, fragment.GetChildren());
             break;
           }

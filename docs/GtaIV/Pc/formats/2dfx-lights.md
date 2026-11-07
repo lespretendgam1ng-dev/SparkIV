@@ -76,7 +76,48 @@ The draw (`deferred_lighting` technique `corona`, in `GTAIV.trace` draw 11411575
 
 That depth holds only the solid scene: the forward draws before it write to another surface (`0x2cb64c80`, the texture's surface being `0x2db36a00`). So a corona shines through glass. In bc_1 the one in the hall lies behind the flat's glass and still shows.
 
-Not in SparkIV: the object's fading alpha (in `GTAIV.1.trace` only a few far objects, at 0.09–0.40 of 0.5), the types of light that blink by time (+0x58), the strength at 0x103F9A4 and the mirrored `paraboloid_corona`.
+Not in SparkIV: the object's fading alpha (in `GTAIV.1.trace` only a few far objects, at 0.09–0.40 of 0.5), the types of light that blink by time (+0x58), the strength at 0x103F9A4 and the mirrored `paraboloid_corona` (below).
+
+### Coronas in the mirrored surroundings' map (`paraboloid_corona`, #154b, 2026-11-07)
+
+The game also draws the coronas into the map of the surroundings that the sun pass mirrors (see
+[deferred_lighting.md](deferred_lighting.md#the-mirrored-surroundings-map-paraboloid-map-and-its-levels)). A wet,
+glossy road then shows each lamp above it as a long bright streak.
+
+- **Evidence:** `GTAIV.3.trace`, intro s6 f712.5 (snapshot 284626530). Road pixel 1552,817: HDR 6.13 / 5.13 / 3.52 at
+  the end, already 5.39 / 4.70 / 3.37 after the sun pass (PS 0x2d5925c0, call 284611599), before any lamp. The lamp
+  over the road (call 284614857) adds only +0.74 and is equal to SparkIV's (cone c74 0.7314, scale c75 3.722; VS c211 is
+  just the volume mesh's sin/cos). The sun pass reads the map texture 0x521ad120 (stage 5), drawn at calls
+  284598543–284599315; its level 0 shows the lamps' glows.
+- **The draw:** 284599299, VS 0x2d31b880, PS 0x2d592f20, ONE / ONE, depth written off (test left on), 520 triangles
+  from a dynamic buffer (stride 36: corner xyz, lamp xyz, colour bytes BGRA with A as v, u, strength).
+  - 260 quads, 203 of them with a size. Half a side = **2 × the corona's size** (the street lamp: 5.0 against its
+    corona's 2.5; the red one 2.5 against 1.25); the corners ± that in world x and y.
+  - Strength **9** for all (not the lamp's intensity, nor SprBght); colour the lamp's bytes.
+  - VS: the quad turned towards the camera round the lamp, only **above** the camera, faded by
+    saturate(height above the camera / (|corner − lamp| × 0.35355)) = saturate(2 · height / half); placed by the map's
+    paraboloid (as the objects: xy / (|d| + d.z), depth 1 − 1 / (|d| + 1)). No test of the scene's depth.
+  - PS: sprite (`corona`) × colour × strength × fade.
+  - The harbour's in-room lamps (orange, z ≈ 9.5, SparkIV's interior coronas) are not among them.
+  - The quad's centre is the corona's place (moved towards the camera by its size, as the screen's corona), and the VS
+    fully decoded turns it to face the camera: one axis horizontal, (dy, −dx, 0), the other perpendicular to both.
+- **Which lamps:** only those in or near the camera's view. f712.5: of SparkIV's lamps above the camera, 72 of 89
+  within the picture are in the game's list, of those beyond the picture's edge fewer the farther out (few past 1.3 ×
+  the half-width), 1 of 188 behind the camera. f469.75 (draw 271752438, 90 quads, 48 with a size): the same; none of
+  SparkIV's lamps 1.1–1.3 km away (the farthest matched: 230 m). Not interior lamps. Presumably the list holds the lamps
+  of the objects in view.
+- **Occlusion matters:** f469.75's map (sun pass 271757934, stage 5) shows the harbour building's dark wall where the
+  near orange wall lamps' quads (255/144/46, half 4, 20–43 m) lie: texel 0.09–0.19 at their centres. They are in the
+  list but hidden by the map's depth. In SparkIV's map they lie in front of its (far-version) building and reflect as
+  bright orange streaks in the ground (pixel 740,940: 5.17 / 3.47 / 1.69 against 1.57 / 1.43 / 1.04 without them; the
+  game 1.31 / 1.06 / 0.72 after its sun pass).
+- **Tried in SparkIV (2026-11-07), not kept:** the quads drawn into SparkIV's map (VSMapCorona in DrawParabolic, half
+  2 × size, colour × 9 × exposure, the game's fade, lamps in view within 1.3 and 250 m). f712.5's streak came right
+  (pixel 1552,817: 5.47 / 4.44 / 2.68, before 3.93 / 3.09 / 1.69, the game 6.13 / 5.13 / 3.52), but because of the
+  occlusion above the visual run got worse: intro s6 f469.75 +0.08, s5 f1149 +0.05, s4 f1833.25 +0.03. The patch:
+  `tests\visual\werkzeug\maimu-notizen\patches\154-154b-alles-2026-11-07.patch`. Status: **not used**.
+- Open: why SparkIV's map has the building behind the wall lamps (its far versions, or which objects it draws), then
+  the coronas again.
 
 ## Which program draws a lamp
 
@@ -435,3 +476,21 @@ Evidence: `GTAIV.3.trace`, intro s6, draw 271710722 (PS 0x2d592840). Colour 1 / 
 **Which vehicles:** in the intro only Roman's cab has its lamps on. Its mission script `roman1` makes the cab (`rom`, `CREATE_CAR(0x8cd0264c, …)`) in its wait loop during the intro and calls `FORCE_CAR_LIGHTS(…, 2)`. The car on the crane has all its lamp dimmers at 0 in the trace. SparkIV reads `FORCE_CAR_LIGHTS` into the script index (`ScriptVehicle.Lights`) and turns on the lamps and their light only for those vehicles (`CutActor.LightsOn`).
 
 Not traced: other night cutscenes. Vehicles there without a script's `FORCE_CAR_LIGHTS` stay dark. The game's brake factor 1.75 (0xFE89A4) when not braking is not used: the cab's light has the 10 of the trace.
+
+## A vehicle's headlamps (#154, 2026-11-07)
+
+`GTAIV.3.trace`, intro s4 f2013.5 (frame 169706787-169732398): the pool of light on the asphalt in front of Roman's
+cab comes from one draw, 169725377, with its own pixel shader 0x2d592a20 (found with `tests/visual/werkzeug/lampbisect.ps1`,
+the HDR target before and after each lamp draw at the pixel 1760,840: 0.80/0.84/0.88 → 1.32/1.37/1.29). Its constants:
+- place (757.536, −213.068, 5.555), half way between the headlight bones and 5.1 m ahead of the tail lamp's light
+  (756.492, −218.092, 5.534, draw 169725410): at the front of the collision box as the tail lamp is at its rear;
+- direction (0.202, 0.961, −0.188): along the car, turned down by `car.headlight.angle` −0.20 rad;
+- radius 10 (VS c212), colour 1 / 1 / 0.8 and strength 21.6 (PS c78), cone cos 50° (c76 0.643) with the scale
+  1 / (cos 20° − cos 50°) (c77 3.368): `car.headlight.innerConeAngle` / `outerConeAngle`;
+- a texture at stage 0 (0x521c83e0) that the program projects to shape the beam: not read.
+- `visualSettings.dat` gives intensity 3 and falloffMax 20; how the game turns them into 21.6 and 10 isn't known.
+
+**In SparkIV** (`CutsceneLights.HeadLampNow`): one spot with the trace's values, at the box's front (the bound's +0x10,
+`ModelScene.BodyBoundsMax`), for the same vehicles as the tail lamp. Its place is 10 cm from the game's. In s4 f2013.5
+the pool now matches within its shape (mean −1.1 over 1500-1900 x 700-1000, before +4.3); without the beam's texture it
+is a little rounder and brighter at its edges.

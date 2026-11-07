@@ -633,9 +633,66 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           Mask = DeferredLightMask.All,
           InRoom = CutsceneLighting.RoomOf(_rooms, at) >= 0,
         });
+        if (!WithoutHeadLamps)
+        {
+          HeadLampNow(now, pose, world, exposure);
+        }
       }
     }
 
+    // A vehicle's headlamps (#154; GTAIV.3.trace, intro s4 f2013.5, call 169725377, PS 0x2d592a20): one spot half way
+    // between the headlight bones at the front of the collision box, along the car turned down by visualSettings.dat's
+    // car.headlight.angle (-0.20 rad), colour (1, 1, 0.8), strength 21.6, radius 10 m, from 20° to 50° (innerConeAngle,
+    // outerConeAngle). The game's own program also projects a texture (stage 0) that shapes the beam: not done here.
+    private const float HeadStrength = 21.6f, HeadRange = 10, HeadInner = 20, HeadOuter = 50, HeadAngle = -0.20f;
+    private readonly Dictionary<CutActor, float> _frontAhead = new Dictionary<CutActor, float>();
+
+    private void HeadLampNow(List<DeferredLight> now, CutscenePose pose, Matrix4x4[] world, float exposure)
+    {
+      var actor = pose.Actor;
+      int left = pose.Bone("headlight_l"), right = pose.Bone("headlight_r");
+      if (left < 0 || right < 0 || left >= world.Length || right >= world.Length)
+      {
+        return;
+      }
+      var body = world[0];
+      var forward = Vector3.Normalize(new Vector3(body.M21, body.M22, body.M23));
+      var up = Vector3.Normalize(new Vector3(body.M31, body.M32, body.M33));
+      if (!_frontAhead.TryGetValue(actor, out float ahead))
+      {
+        float front = actor.Scene?.BodyBoundsMax is float[] max && max.Length >= 2 ? max[1] : float.NegativeInfinity;
+        if (actor.Scene?.BodyBoundsMax == null && actor.Scene != null)
+        {
+          foreach (var mesh in actor.Scene.Meshes)
+          {
+            for (int i = 1; i < mesh.Positions.Length; i += 3)
+            {
+              front = MathF.Max(front, mesh.Positions[i]);
+            }
+          }
+        }
+        ahead = float.IsFinite(front) ? MathF.Max(0, front - (pose.RestPlace(left).Y + pose.RestPlace(right).Y) / 2) : 0;
+        _frontAhead[actor] = ahead;
+      }
+      var at = (world[left].Translation + world[right].Translation) / 2 + forward * ahead;
+      var dir = Vector3.Normalize(forward * MathF.Cos(HeadAngle) + up * MathF.Sin(HeadAngle));
+      float cosOuter = MathF.Cos(HeadOuter * MathF.PI / 180), cosInner = MathF.Cos(HeadInner * MathF.PI / 180);
+      now.Add(new DeferredLight
+      {
+        Position = at,
+        Range = HeadRange,
+        Direction = dir,
+        CosOuter = cosOuter,
+        ConeScale = 1 / (cosInner - cosOuter),
+        Color = new Vector3(1, 1, 0.8f) * (HeadStrength * exposure),
+        Model = DeferredLightModel.Lamp,
+        Mask = DeferredLightMask.All,
+        InRoom = CutsceneLighting.RoomOf(_rooms, at) >= 0,
+      });
+    }
+
+    /// <summary>No headlamps (as before 2026-11-07, #154). For comparisons.</summary>
+    public static bool WithoutHeadLamps { get; set; }
     // The view's six planes (Direct3D: 0 <= z <= w), each normalised: n.p + w >= 0 inside.
     private static Vector4[] FrustumPlanes(Matrix4x4 m)
     {

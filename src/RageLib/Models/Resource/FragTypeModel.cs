@@ -99,6 +99,8 @@ namespace RageLib.Models.Resource
     public FragTypeChild[] Children { get; set; }
     /// <summary>The least corner of its collision bound's box (x, y, z); null without a bound.</summary>
     public float[] BoundBoxMin { get; set; }
+    /// <summary>The greatest corner of its collision bound's box (the bound's +0x10); null without a bound.</summary>
+    public float[] BoundBoxMax { get; set; }
 
     #region Implementation of IFileAccess
 
@@ -123,6 +125,8 @@ namespace RageLib.Models.Resource
       uint boundOffset = ResourceUtil.ReadOffset(br);
       if (boundOffset != 0 && boundOffset + 0x30 <= br.BaseStream.Length)
       {
+        br.BaseStream.Seek(boundOffset + 0x10, SeekOrigin.Begin);
+        BoundBoxMax = new[] { br.ReadSingle(), br.ReadSingle(), br.ReadSingle() };
         br.BaseStream.Seek(boundOffset + 0x20, SeekOrigin.Begin);
         BoundBoxMin = new[] { br.ReadSingle(), br.ReadSingle(), br.ReadSingle() };
       }
