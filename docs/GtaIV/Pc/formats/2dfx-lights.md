@@ -129,8 +129,26 @@ glossy road then shows each lamp above it as a long bright streak.
   (pixel 1552,817: 5.47 / 4.44 / 2.68, before 3.93 / 3.09 / 1.69, the game 6.13 / 5.13 / 3.52), but because of the
   occlusion above the visual run got worse: intro s6 f469.75 +0.08, s5 f1149 +0.05, s4 f1833.25 +0.03. The patch:
   `tests\visual\werkzeug\maimu-notizen\patches\154-154b-alles-2026-11-07.patch`. Status: **not used**.
-- Open: why SparkIV's map has the building behind the wall lamps (its far versions, or which objects it draws), then
-  the coronas again.
+- **Solved (2026-11-09): the corona stands one corona size lower, not the building.** In f469.75 (`GTAIV.3.trace`,
+  map pass 271751664-271752438, eye (757.32, -220.50, 6.06): c12 of the corona draw holds z - 512) the game draws the
+  same 27 far versions into its map as SparkIV (all matched by place). Its corona buffer (call 271752436, decoded) holds
+  every lamp at **SparkIV's place less the lamp's corona size in z** (wall lamps 9.98 → 7.98 for size 2, red 17.62 →
+  16.37 for 1.25, green 36.16 → 35.41 for 0.75; all matched lamps exactly). So the ship's far version (Ks_Ship_LOD)
+  hides the wall lamps (BM_wall_light_02 on BOAT_Bow_*), and only halos along its silhouette remain. With that, the
+  coronas' share of SparkIV's map (dumped and diffed against the game's before/after the draw) matches in place and
+  shape; strength 9 × colour is right in SparkIV's units (peak 15.94 against 9.0 = 1.77, the rest of the map 1.73).
+  The map's x is mirrored against SparkIV's (u → -u).
+- **Which lamps (f469.75, not settled):** nearly every lamp within ~38 m in any direction, also behind the camera
+  (756.3/-236.5 at 25 m, w < 0), and beyond that those in or near the view (up to 158 m). Neither the light's sphere
+  nor the lamp object's sphere against the view fits (the wall lamps are own objects of radius 0.2). In s4 f2013.5
+  (draw ~169719758) the game holds 82 sized quads, all 37 of SparkIV's among them.
+- **Tested in SparkIV (2026-11-09), not kept:** lowered coronas, near 38 m or in view (× 1.3), up to 250 m. f712.5
+  2.5060 → 2.4539, s4 f1177.5 −0.021, s5 f782 −0.010; but s4 f2013.5 +0.026 (Roman's jacket and the facade at the right
+  pick up the coronas: jacket 19/27/32 → 27/36/38, game 18/26/30, although the game draws more coronas there), s4
+  f420.5 +0.017 with a view margin of 2.5 (0 with 1.3), s6 f146 +0.005, f469.75 +0.002. Patch:
+  `tests\visual\werkzeug\maimu-notizen\patches\154b-kartencoronas-2026-11-09.patch`. Open: how sharply peds and
+  facades read the map (the game's lod for them), before the coronas can go in. Also rejected: no discard below the
+  eye in the map (worse everywhere, f712.5 +0.36).
 
 ## Which program draws a lamp
 
