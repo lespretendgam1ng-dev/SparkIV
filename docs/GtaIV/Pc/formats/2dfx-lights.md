@@ -34,6 +34,26 @@ Models (`.wdr`, `.wdd`, `.wft`) can contain light effects, i.e. lamps and wall l
 
 The fields at +0x30 and +0x34 (RageLib's `Unknown2C`, `Unknown30`) are the light volume's strength (times Range) and size (times the radius); see [Light volumes](#light-volumes).
 
+### Which objects' lamps come in, and the fade's reference point (#149, #154b, 2026-11-09)
+
+`Entity_AddModelLights` (0xC1DB60, per object, calls `Light_FromEffect` per 2dfx light) decides first by the object:
+
+- **Visible or near:** if the object is in none of the frame's visible render phases (`DAT_0159b75c & entity+8 == 0`),
+  its lamps come in only if its origin (entity+0x10, or its matrix +0x30) lies within **35 m** (squared 1225.0 at
+  0xE8B800) of a reference point **P** (`DAT_0128e340/44/48`). Fits the mirrored map's coronas of intro s6 f469.75:
+  every lamp within ~35 m in any direction, beyond that only those of visible objects (see #154b above).
+- **The lamp's fade (FadeDistance, +0x60; -1.0 = none):** strength × saturate((Distance − (|P − lamp| − FadeDistance)) /
+  Distance) - measured from **P, not the camera** (a factor below 0.01 for both light and volume drops it: 0xFE870C).
+- **P is not the cutscene camera, nor the player actor.** `GTAIV.1.trace` bc_3 s1: at f588.25 (frame ~99852000-99887039,
+  camera 502.9/-505.0/2.1, Niko beside it) the orange wall lamps BM_wall_light_02 (r 8, strength 8, FadeDistance 75)
+  7-11 m from the camera are not drawn, although their object (494.17/-498.07/2.69) is drawn into the G-buffer
+  (MRT 0x45f35ae0); an equal lamp 217 m west (285.85/-488.83) burns at full strength 8, one at 377.99/-408.17/29.06
+  at 5.24 (f292.5: 77.8 m from P). So P lay ~x 300, y -430 then; at f854.75 both near wall lamps (494.39/-497.98,
+  495.60/-504.55) are drawn and the western one not: P had moved east by then. P is a global the savegame restores
+  (`FUN_008c8880`, "SimpleVars"; written elsewhere through a pointer, not found) - presumably the game's world centre /
+  streaming focus. **Open:** where P comes from in a cutscene. SparkIV measures the fade from the camera and keeps
+  every object's lamps.
+
 ### Flags in the game's light list
 
 `Light_Add` (0xABCCD0) creates the lights of the frame (structure of 0x80 bytes: +0x20 position, +0x44 type, +0x48 flags, +0x54 radius):
