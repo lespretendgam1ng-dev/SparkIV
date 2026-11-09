@@ -45,7 +45,7 @@ namespace SparkIV.WinUI.Rendering.D3D12
     private const string Shader = @"
 struct Constants
 {
-  float4 Scale;      // x: tone scale, y: saturation, z: gamma, w: unused
+  float4 Scale;      // x: tone scale, y: saturation, z: gamma, w: the depth of field's reach (0: none)
   float4 Correct;    // rgb: colour correction (x 2 in the shader)
   float4 Shift;      // rgb: colour shift, w: 1 / (its luminance + 0.001)
   float4 Texel;      // xy: 1 / the read texture's size
@@ -117,6 +117,8 @@ float4 PSComposite(VsOut i) : SV_Target
     // (-1.5, 0.5) where anything was drawn (the G-buffer's GB2.w); then lerp(point, their mean).
     float d = Depth.Load(int3(i.position.xy, 0));
     float z = c.Dof.x * c.Dof.y / (c.Dof.y - d * (c.Dof.y - c.Dof.x));
+    // (Held at the reach: the game reads the depth through its own projection, whose far clip ends it.)
+    if (c.Scale.w > 0) z = min(z, c.Scale.w);
     float b = min(max(max(c.Dof.z - z, z - c.Dof.w), 0) * 2.0, 1.0);
     b *= b;
     float3 s0 = LightAt(i.uv + t * float2(-0.5, -1.5)), s1 = LightAt(i.uv + t * float2(1.5, -0.5));
@@ -539,6 +541,7 @@ float4 PSComposite(VsOut i) : SV_Target
       constants[11] = 1f / (Vector3.Dot(tone.ColorShift, new Vector3(0.2125f, 0.7154f, 0.0721f)) + 0.001f);
       constants[12] = 1f / Width;
       constants[13] = 1f / Height;
+      constants[3] = dof ? post.DofReach : 0;
       constants[16] = dof ? post.NearClip : 0;
       constants[17] = dof ? post.FarClip : 0;
       constants[18] = post.FocusNear;

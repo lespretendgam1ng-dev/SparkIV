@@ -208,6 +208,15 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
 - **The pass:** GTA IV's PS 0x23e5e6a0 (`GTAIV.1`, call 74970168), TLAD's 0x25819460 with the film grain (`GTAIV.3`, call 120953415). It does the depth of field, the motion blur and the tone mapping in one, into the backbuffer.
 - **Checked:** recomputed per pixel from the pass's inputs (state dumps right before it) against the backbuffer right after it. `GTAIV.1` (bc_3, outside): 99.8 % of the pixels within one step. `GTAIV.3` frame 13868 (et01_aa, DOF near 5.9 m, far 7.5 m): 100 % within two steps in every depth band, the mean difference 0.25 (rounding).
 - **Depth of field:** b = min(1, max(near − z, z − far, 0) / 0.5)², near and far from dofDist (see `CameraDof`), the distance z from the depth with dofProj (near clip 0.05). The near side blurs too. Without it, the pixels nearer than 2 m in `GTAIV.3` miss (mean 0.53 instead of 0.25).
+- **A negative far, and how far the depth reaches** (#138, 2026-11-10, `GTAIV.3` intro s2 f352.75, the pass PS
+  0x2d2e61e0 at call 19415645):
+  - The track gives (1, −1600) there; the pass gets dofDist (c78) = (0.5, 1599, 0.5, 800.5): the far is taken by its
+    size, sharp from 1 to 1600 m. SparkIV took −1600 as it is, so everything beyond 1 m was blurred.
+  - z comes from dofProj (c77) = (0.05, 1500, …), the game camera's own clip planes, so z is never beyond 1500 m: with
+    a far of 1600 m nothing far is blurred, not even the sky. SparkIV read the depth through its own far plane (7 km)
+    and blurred the sky and the skyline's outlines beyond 1600 m.
+  - In SparkIV: `CutsceneCamera.DofAt` (|far|), `CutsceneCamera.DofReach` = 1500 (`PostParams.DofReach`, z held at it
+    in `ToneMapper`'s composite). intro s2 f352.75 2.56 → 2.25. Status: **used**.
 - **The G-buffer's softening:** where GB2.w ≠ 0 the point first goes halfway to the filtered read at (−1.5, 0.5) texels.
   - The pass picks one of the four reads by GB2.w × 256 in (0, 2], (2, 4], (4, 8], (8, 256]. GB2 is A2R10G10B10, so a set GB2.w always picks the last.
   - The G-buffer is cleared to 0 (`GTAIV.1` call 74953082), and every program that fills it writes its alpha there: gta_default and gta_normal_spec alpha × globalScalars.x (kept only from 0.176, so at least 1/3), gta_ped 1. So it applies to everything drawn, not to the sky.

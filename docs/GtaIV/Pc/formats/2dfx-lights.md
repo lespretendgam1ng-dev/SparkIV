@@ -88,6 +88,17 @@ lamps) by the steps at f292.5 and f588.25, but two of them through the shadow-la
 almost where it was; SparkIV draws all of them in all three (their light makes the paving at f588.25 1160,324 warmer
 and brighter by +0.38 / +0.21 / +0.06). Which shadow lamps the game draws per frame is not known yet.
 
+### A far version's lamps light nothing (#138, 2026-11-10)
+
+Far versions carry 2dfx lamps of their own: in the intro's location `LOD_N13_A_MH1` 15 (floodlights of 73 m and
+strength 20 on the tower), `LOD_22_00_MH1` 11, `SLODMH95MH97_DC9` 11, `LOD_21B_MH1` 9 and more. In intro s2 f352.75
+(`GTAIV.3.trace`, the frame ending at call 19415728) the game leaves the tower 1 km off dark, where SparkIV lit its
+spire and one side bright; with SparkIV's lamps off the tower matches. SparkIV takes no light from a far version's lamps
+(their coronas stay; `CutsceneLights`, `KeepFarLamps` / cutgen `D3D12KEEPFARLAMPS=1` for the old way). Visual test: only
+intro s2 changes (with the depth of field fix, #138): f352.75 −0.33, f863 −0.34, f682.5 −0.09, f71.25 −0.08, none
+worse. Not checked in GTAIV.exe why (whether Entity_AddModelLights skips the LOD entities or their lamps never reach
+Light_Add); the evidence is the traced frame. Status: **not used** (on purpose).
+
 ## Coronas
 
 Every 2dfx light also hands in a corona: a soft sprite facing the camera, added to the picture (#18). They can cover much of the frame: in bc_1 the one 1.2 m from the camera lay over the whole upper picture, which made Bernie's flat look 8–9 % too dark "without lights". With the corona draw left out of the game's frame, the game's picture equals SparkIV's across the room.

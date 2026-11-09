@@ -105,6 +105,13 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           {
             continue;
           }
+          // GTA IV (PC): a far version's lamps light nothing (#138). The intro's LOD_N13_A_MH1 carries 15 (floodlights
+          // of 73 m on its tower, 1 km off in s2 f352.75); the game leaves the tower dark there (GTAIV.3.trace, the frame
+          // ending at call 19415728), SparkIV lit its spire and a side bright.
+          if (obj.Far && !KeepFarLamps)
+          {
+            continue;
+          }
           var at = Vector3.Transform(light.Position, obj.Place);
           // A lamp the same as one already taken (another object at the same place: the same radius and flags within
           // 1 cm) only once (#149). GTA IV (PC) makes such a light once: GTAIV.1.trace, bc_3 s1 (frames ending at calls
@@ -176,6 +183,9 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
 
     /// <summary>The lamps with the 2dfx flag 0x10000 kept (as before 2026-11-05, the page's). For comparisons.</summary>
     public static bool KeepFlag10000Lamps { get; set; }
+
+    /// <summary>The far versions' lamps kept (as before #138). For comparisons.</summary>
+    public static bool KeepFarLamps { get; set; }
 
     /// <summary>The location's lamps (lighting anything at all).</summary>
     public int LampCount => _lamps.Count;

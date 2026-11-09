@@ -966,6 +966,7 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           FarClip = _far,
           FocusNear = dof?.Near ?? 0,
           FocusFar = dof?.Far ?? 0,
+          DofReach = CutsceneCamera.DofReach,
           Fade = _fade.At(frame),
         };
       }
