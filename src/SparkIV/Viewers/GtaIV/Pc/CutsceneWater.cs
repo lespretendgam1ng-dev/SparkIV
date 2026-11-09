@@ -162,6 +162,16 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     private const int NoiseSeed = 0x5EA1;
     private const ulong WarmSeed = 0x5EA2;
     private const ulong SwellSeed = 0x5EA3;
+
+    /// <summary>
+    /// GTA IV (PC): the game clock's milliseconds at the section's start. The swell's rows are pushed by
+    /// sin(y × 0.15 + 2π (ms % 4000) / 4000) (0xADBA40) with the game's own clock, which a cutscene's files don't give:
+    /// 0 by default, so the swell's phase is the session's chance. The visual tests set the phase measured from the
+    /// reference's trace (cutgen SWELLCLOCK / SWELLCLOCKS, #148). A change makes the swell anew.
+    /// </summary>
+    public static double SwellClockMs { get; set; }
+
+    private double _swellClockUsed;
     private const ulong PlaySeed = 0x5EA4;
 
     // A counter-based random number (SplitMix64 of the seed and the step's index): the same for a step however it is
@@ -1435,7 +1445,7 @@ float4 PSWater(VsOut i) : SV_Target
       int x0 = EvenDown(centre.X), y0 = EvenDown(centre.Y);
       int m = (int)Math.Floor(Math.Max(seconds, 0) / SwellStepSeconds + 1e-6), s = Math.Max(0, m - SwellCap);
       bool moved = _swellStarted && (x0 != _swellX0 || y0 != _swellY0);
-      bool jumped = !_swellStarted || Math.Abs(x0 - _swellX0) > 200 || Math.Abs(y0 - _swellY0) > 200;
+      bool jumped = !_swellStarted || Math.Abs(x0 - _swellX0) > 200 || Math.Abs(y0 - _swellY0) > 200 || _swellClockUsed != SwellClockMs;
       if (_swellM == m && !moved && !jumped)
       {
         return;
@@ -1455,6 +1465,7 @@ float4 PSWater(VsOut i) : SV_Target
         Array.Clear(_height);
         Array.Clear(_speed);
         _swellStarted = true;
+        _swellClockUsed = SwellClockMs;
         _swellX0 = x0;
         _swellY0 = y0;
         from = s;
@@ -1491,7 +1502,7 @@ float4 PSWater(VsOut i) : SV_Target
       int to = (int)Math.Min(m, (long)from + budget);
       for (int j = from; j < to; j++)
       {
-        Advance((float)SwellStepSeconds, (j + 1) * 20.0, kick, swell, j);
+        Advance((float)SwellStepSeconds, (j + 1) * 20.0 + SwellClockMs, kick, swell, j);
       }
       _swellM = to;
     }

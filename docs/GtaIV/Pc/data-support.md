@@ -252,6 +252,26 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
     - Measured (HDR, the water's box in f140): the game before its tone mapping 4.067 / 4.371 / 4.633; SparkIV before 3.822 / 4.206 / 4.540 (without the depth effect), now 3.948 / 4.343 / 4.686.
     - In SparkIV: `waterColor` × `sky.skyLight`, `depthFx` in `gameFog` (`gtaiv-pc.js`). Visual run: bc_3 s3 f357 −0.98, f140 −0.92, s1 f984 −0.80, f79 −0.78; worse at most +0.03.
     - The near water in s3 f357.25 (HDR, before the tone mapping): the game 3.39 / 3.49 / 3.54, SparkIV 2.97 / 3.01 / 3.00. The water is deep there (alpha about 1) and the mirror's content matches; without the swell SparkIV comes to 3.22 / 3.31 / 3.34. The game's swell there (its 289 water quads' vertices, 36 bytes: place, normal, colour; the window's quarter drawn, world 487–587 / −598–−497, 1776 points): heights' spread 0.157 m; SparkIV's over the same points 0.167 m. In bands along y both show the long swell's rows (42 m), shifted against each other: the game's calm row lies at the camera (0.098 m within 10 m), SparkIV's not (0.146 m). That phase comes from the game's clock (ms % 4000, GTAIV.exe 0xADBA40), the session's chance, so it is left as it is. The window is placed as SparkIV's (centred on the marker, 0xADBA40 / 0xAD5560); water.dat has no calming quads (flag 8, 0xAD4190) near bc_3.
+- **The swell's phase decides the near water's brightness** (#148, 2026-11-09, `GTAIV.1` bc_3 s3 f357.25, frame
+  164528008–164538675, water PS 0x2dbbdd80 from call 164536354):
+  - SparkIV's open water was up to 24 % brighter in HDR than the game's (1300–1550 / 150–400: game 3.48 / 3.76 / 3.97
+    after the water, SparkIV 4.44 / 4.86 / 5.21 in the game's units). The mirror's content is the same (the
+    ReflectTexture there 7.65 / 8.61 / 9.36, SparkIV's 7.63 / 8.56 / 9.30 before `waterReflectionScale`, c74 = 1.428),
+    and the sun (c18 = (0.996, 0.882, 0.769) × 11.925) and the water's colour (c72, c73) are SparkIV's.
+  - The game's pixel recomputed from its own inputs (the wave texture s0, the mirror s1, the draw's constants, the
+    swell grid's vertex normals from the draws' vertex buffers) gives its result: beyond 50 m (no swell) exactly
+    (4.358 against 4.363), within 50 m to 1.5–6 %. Without the swell's normals it would be 7–20 % brighter there: the
+    swell (v1.xy × near / v1.z added to both normals) tilts the water and lowers the Fresnel.
+  - The swell's mean slope along y lay the other way round in SparkIV in all regions (game +0.051 / +0.059 / −0.116,
+    SparkIV −0.059 / −0.071 / +0.130): the rows' push sin(y × 0.15 + 2π (ms % 4000) / 4000) (0xADBA40) runs on the
+    game's own clock, SparkIV's on the section's time from 0. The game's clock is the session's, so in the app the
+    phase stays chance; in the visual tests each reference gets the clock measured from its trace (`SWELLCLOCK`,
+    the game clock's ms at the section's start modulo 4000, like `CLOUDPHASE`). Measured by fitting: SparkIV's mean
+    slopes per screen region at the clocks 0 / 1000 / 2000 / 3000 (linear in the push: m0 + a cos θ + b sin θ) against
+    the game's from its grid. The clock is not one per section: within s2 it drifts (f436.75 500 ms, f786.00 3450 ms;
+    the traced game ran at 16–23 ms a frame, its clock not in step with the cutscene's time).
+  - In SparkIV: `CutsceneWater.SwellClockMs` (cutgen `SWELLCLOCK`, `SWELLCLOCKS` = ms@frame from lauf.ps1); a changed
+    clock makes the swell anew. Status: **used** (tests only; the app keeps 0).
 - **The near water's swell** (#13, 2026-10-28):
   - Recomputed per pixel with the trace's own inputs (depth s2, waves s0, mirror s1 at the first water draw 74265526), the near water came out 10–16 % brighter than the game's in a band 9–13 m off. The water's grid round the camera (the CPU swell, 2 m apart) passes its vertex normals into the slopes (r3 += v1.xy × near / v1.z). With them, read from the draws' vertex buffers, the band is gone and the game lies an even ~10 % above the mirror's term (its sun and glint).
   - The vertex normal is ≈ 0.95–0.98 × (height 2 m before − height 2 m after) (fitted on 1782 points, r 0.97–0.98), as SparkIV takes it. The game's grid has settled: heights' spread 0.10 m, normals 0.024 across and 0.065 along y.
