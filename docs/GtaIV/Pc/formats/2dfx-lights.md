@@ -53,6 +53,17 @@ The fields at +0x30 and +0x34 (RageLib's `Unknown2C`, `Unknown30`) are the light
   (`FUN_008c8880`, "SimpleVars"; written elsewhere through a pointer, not found) - presumably the game's world centre /
   streaming focus. **Open:** where P comes from in a cutscene. SparkIV measures the fade from the camera and keeps
   every object's lamps.
+- **P is a field of a global object** (2026-11-10, byte search for the addresses): P = +0x30 of an object at
+  0x128e310, which over 100 functions use as `this` (`MOV ECX,0x128e310`: FUN_005a3270, FUN_005c2380, FUN_009431f0,
+  FUN_008c8880 …); +0x10 (0x128e320) is a second vector read next to P (the lock-on target choice FUN_00a2a950 takes
+  both). The only instruction naming P's address as a store target is the savegame's load (008c88a8).
+- **0x128e310 is a matrix, P its translation:** every frame FUN_00a88200 (called with `this` = 0x103e494, a camera
+  manager) stores the speed (new − old P at 0x128e390), then copies a matrix into 0x128e310 with FUN_00c3e360 (four
+  rows: +0x00 … +0x30): the manager's current camera's (`this[2]` + 0x10, its place at +0x40), or under some conditions
+  (DAT_011f7060 == 1, …) FUN_00a86bb0()'s (+0x10). So P is the place of the camera the camera manager runs. **Open:**
+  this contradicts the bc_3 measurement above (P ~200 m west of the cutscene camera at f588.25); which camera the
+  manager runs during a cutscene, and whether the lamps are made with the previous frame's P, is to be checked in the
+  trace (e.g. a light whose fade starts within the frame).
 
 ### Flags in the game's light list
 
