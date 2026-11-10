@@ -306,6 +306,13 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
   - Cut half a metre under the water, as the game's clip plane (set at 74262927: in the world z ≥ −0.515 with the water at 0). What stands just under the water shows in the mirror too: the pier's dark lower edge in the corner at f79 (game 1.15, SparkIV now 0.32, before sky at 7.3).
   - **The mirror's specks** (the user's observation, 2026-10-28): the game reads its wave texture with this one level only (the water draw's SurfaceTextureSampler, 1024 × 1024, no smaller levels, MINFILTER LINEAR). Far off, each pixel takes the slope at its own point, so the mirror breaks up into specks. SparkIV made mipmaps of it and read them averaged, so its mirror stayed smooth in the app. Visual run (water references): sum −0.14; at f79 the rocks' and the pier's mirror now breaks up into specks as the game's, a little fainter and less spread.
   - Lit as the game's pixel shader for the ReflectTexture (0x1A3F8A40): the texture × (the light from around × AO + the sun × saturate((n.l − 0.25) × 4/3)), the far fog over it; no shadow, no shine, no lamps. The same as for the map of the surroundings; the constants (c18, c37, c38, c45) are SparkIV's.
+  - **The mirror's fog goes by the view depth** (#148, 2026-11-10; `GTAIV.1` bc_3 s2 f786, the ReflectTexture pass PS
+    0x22f07c60, 405 draws from call 136280082 into 0x2c7e50c0): lerp(lit, `globalFogColor`, saturate((w −
+    `globalFogParams`.x) / (.y − .x))) with w the mirrored camera's clip w (its vertex program's o2.w), not the distance.
+    SparkIV took the distance, larger towards the picture's sides, so its mirrored quay was hazier: in s2 f786
+    (x 0–300, rows 540–660) 5–12 % brighter than the game's ReflectTexture; by the depth within 1–5 %. Its AO is
+    1 + `globalScalars2`.z × ((`gDayNightEffects`.x × red + .y × green) × `globalScalars`.z − 1) (vertex program); SparkIV
+    keeps the colours' AO alone there (not changed). The map of the surroundings keeps the distance (no view depth).
   - Only front faces (CULLMODE CW for all its draws, 74262957–74263295): from below SparkIV showed the sunlit tops of the far ground and of the pier.
   - Visual run (bc_3, against the mirror of the near models): s3 f357.5 −0.36, s2 f786.75 −0.12, s1 f984 −0.09; worse s2 f437 +0.11, s1 f586.75 +0.06; sum −0.48. TLAD et01_ba (the map of the surroundings) +0.01 to +0.05.
   - Open: at f79 the game's mirror has a dark underside of the pier in its corner (1.2), SparkIV's sky there; the shore's far version behind the bridge stays in SparkIV's mirror, in the game's it is gone in the fog.

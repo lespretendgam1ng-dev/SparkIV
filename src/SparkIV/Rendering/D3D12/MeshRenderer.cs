@@ -1160,7 +1160,16 @@ float4 MirrorSurface(VsOut input, bool toMap)
   float dayNight = f.Params.x;
   float3 vc = input.color;
   float ao = saturate(baked ? dayNight * vc.r + (1 - dayNight) * vc.g : vc.r);
-  float farM = saturate((length(input.world - f.Eye.xyz) - f.FogNear.w) / max(f.FogFar.w - f.FogNear.w, 1));
+  // The fog by the view depth (clip w), not the distance: GTA IV (PC)'s ReflectTexture program (GTAIV.1.trace, bc_3 s2
+  // f786, PS 0x22f07c60 from call 136280082) takes sat((o2.w - globalFogParams.x) / (.y - .x)) with o2.w the clip w
+  // (#148: with the distance the mirror's quay came out hazier and up to a sixth brighter). The map has no view depth:
+  // the distance there.
+#ifdef MIRROR_FOG_BY_DISTANCE
+  float fogAt = length(input.world - f.Eye.xyz);
+#else
+  float fogAt = toMap ? length(input.world - f.Eye.xyz) : input.position.w;
+#endif
+  float farM = saturate((fogAt - f.FogNear.w) / max(f.FogFar.w - f.FogNear.w, 1));
   float3 lit = lerp(albedo * (around * ao + f.Sun.rgb * sunM), f.FogFar.rgb, farM);
   float a = saturate(alpha);
   if (toMap)
@@ -2268,9 +2277,12 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     /// <summary>The textures on the GPU, those that couldn't be made (drawn white), and their bytes.</summary>
     public (int Made, int Failed, long Bytes) TextureStats => (_textures.Count, _textures.Failed, _textures.Bytes);
 
+    /// <summary>The water's mirror fogged by the distance, as before #148 (for comparisons; read when the shaders are made).</summary>
+    public static bool MirrorFogByDistanceAlways { get; set; }
+
     private static byte[] Compile(DxcShaderStage stage, string entryPoint)
     {
-      using IDxcResult result = DxcCompiler.Compile(stage, Shader, entryPoint);
+      using IDxcResult result = DxcCompiler.Compile(stage, (MirrorFogByDistanceAlways ? "#define MIRROR_FOG_BY_DISTANCE 1\n" : "") + Shader, entryPoint);
       if (result.GetStatus().Failure)
       {
         throw new InvalidOperationException("HLSL " + entryPoint + ": " + result.GetErrors());
