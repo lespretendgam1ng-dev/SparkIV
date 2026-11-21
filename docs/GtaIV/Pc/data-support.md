@@ -175,6 +175,17 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
 - **Sky colour:** SkyColor + azimuth colour (columns 64–72, 77, 78) and sunshine (103–105, 119).
   - HDRExposure = SkyLightMult (column 60) × 2.85 (0xDBC049), clamped to 30. After that everything is tone-mapped like the rest.
 - **Cloud noise:** The shader `rage_perlinnoise` (0x23C2D220) recomputes it every frame into a 256² texture. The basis is `baseperlinnoise3channel` from `pc\textures\skydome.wtd`, 6 octaves.
+  - #145 (2026-11-21, `GTAIV.1.trace` bc_3 s3, pass at call 182003640, PS 0x2cbb17e0): its program is SparkIV's
+    `PSPerlin` instruction for instruction; it reads the base noise **trilinearly without anisotropy** (MIN/MAG/MIP
+    LINEAR, wrap), while the sky draw's own samplers are anisotropic. SparkIV used the anisotropic one for both; now the
+    pass has its own (bc_3 s3 f829.50's sky 3.98 -> 3.65; with the game's own noise texture put in, 2.30).
+  - The phase matters to a few hundredths: ±0.05 changes that sky by 0.2-0.6 levels. In `GTAIV.1.trace` the game's
+    phase follows its clock (gDayNightEffects): from s1 f292.5 to f984.25 the clock went on 0.187 h, the phase
+    1.493 = 0.187 × CloudSpeed 8; SparkIV's phase from the playing time (23.06 s -> 0.192 h) went 1.537, 3 % more - the
+    traced game's clock ran slower than real time. For the app SparkIV's way stays; the visual tests give each bc_3
+    reference a `CLOUDPHASE` such that its phase is the game's (measured at s1 f292.5, s2 f1055.5, s3 f829.5 from the
+    last perlin pass before the snapshot, carried to the other references by their measured hours; bc_3 s2 f1307
+    -0.24, s3 f829.50 -0.22). TLAD's et01_ba s1 f706.75 was within 0.002 already.
   - The fine structure comes from `noise16_p`, not from `detailbump2`. In the capture the textures are two levels smaller; this is due to the texture quality.
   - Tried and taken back (2026-10-27/28): the textures from their third level, as in the trace. in `GTAIV.1` the noise draw 74260495's Noise1Sampler is 32 × 32, byte for byte the third level of the 128 × 128 `baseperlinnoise3channel`; the sky draw 74265456's HighDetailNoiseSampler is 64 × 64, the third level of the 256 × 256 detail texture (within DXT rounding). From the full texture the noise's spread was 0.20, the game's 0.11 (now 0.110). With twice the contrast fewer places passed the threshold: blue sky where the game's lies overcast, and the water mirroring it too blue. Visual run: bc_3 sum −5.46 (s3 f828.25 −1.96, s2 f1307 −1.23, s2 f1055.25 −0.35, s1 f854.75 −0.35); worse s3 f357.5 +0.09, f137.5 +0.05; TLAD unchanged. Taken back: the reference videos were recorded with HQ textures (the user, 2026-10-28), so there the game samples the full noise; the better match came from more cloud cover by chance. The videos' cloud cover is chance as far as known: bc_3's weather is SUNNY (bernie3: `FORCE_WEATHER_NOW(1)`), and where the clouds lie comes from the phase, which grows with all the game time played in the save (`GTAIV.1`: 4501.13; SparkIV starts from TLAD's trace's 593.25), so no video's can be known.
 - **Cloud columns** (matched in both captures):
