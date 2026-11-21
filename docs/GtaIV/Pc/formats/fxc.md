@@ -99,6 +99,16 @@ The peds' skin G-buffer pass runs with the engine's alpha test (ref 100, `GTAIV.
 `globalScalars.x` × vertex alpha (not the texture's: its alpha holds the subsurface mask); with the engine's
 `ALPHAFUNC` `ALWAYS` (see Hair) it cuts nothing anyway.
 
+## A material without a texture (#130, 2026-11-21)
+
+A material naming no texture at all (no `DiffuseTex` parameter: bc_1's pendant lamp rod, `Pub3_BCLights` mesh 1,
+`gta_default`) is drawn with no texture bound: `GTAIV.trace` bc_1 s2 f1174, `SetTexture(0, NULL)` at call 129306701
+before its G-buffer draw 129306704. A D3D9 program reading an unbound sampler gets (0, 0, 0, 1), so its albedo is black
+and its alpha 1; the rod is black in the game's frame. SparkIV drew such materials white (texture 0); now a solid map
+material without any texture takes black (`MeshRenderer`, `UntexturedWhite` / cutgen `D3D12UNTEXTUREDWHITE=1` for the
+old way). A texture that is named but not found still draws white (the game has it). Visual test: 7 references
+closer by 0.01-0.02, none worse. Status: **used**.
+
 ## gta_ped_reflect
 
 Its G-buffer program is gta_ped's (#156, 2026-11-08): albedo = texture × `matMaterialColorScale` (c66, 1 for all peds

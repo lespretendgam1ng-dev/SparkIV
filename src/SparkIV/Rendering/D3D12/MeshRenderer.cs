@@ -2277,6 +2277,9 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     /// <summary>The textures on the GPU, those that couldn't be made (drawn white), and their bytes.</summary>
     public (int Made, int Failed, long Bytes) TextureStats => (_textures.Count, _textures.Failed, _textures.Bytes);
 
+    /// <summary>Solid map materials without any texture drawn white, as before #130 (for comparisons).</summary>
+    public static bool UntexturedWhite { get; set; }
+
     /// <summary>The water's mirror fogged by the distance, as before #148 (for comparisons; read when the shaders are made).</summary>
     public static bool MirrorFogByDistanceAlways { get; set; }
 
@@ -2770,6 +2773,15 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         if (!textured && (material.Color is { Length: >= 3 } || material.RenderTarget))
         {
           tint = material.Color is { Length: >= 3 } own ? new Vector3(own[0], own[1], own[2]) : Vector3.Zero;
+        }
+        // GTA IV (PC): a solid map material naming no texture at all draws black - the game binds no texture (NULL) and
+        // the program's read gives (0, 0, 0, 1): GTAIV.trace bc_1 s2 f1174, Pub3_BCLights' rod (gta_default, draw
+        // 129306704 after SetTexture(0, NULL) at 129306701) is black, SparkIV drew it white (#130). Not a texture named
+        // but not found (that one the game has).
+        else if (!textured && string.IsNullOrEmpty(material.TextureName) && !UntexturedWhite && pass == Pass.Solid && !material.Vehicle &&
+                 !source.Actor && !material.RenderTarget)
+        {
+          tint = Vector3.Zero;
         }
         // Its kind for the light (see the shader): vehicles are never baked; a glowing material only with a texture,
         // and only solid (the see-through ones glow apart: not yet).
