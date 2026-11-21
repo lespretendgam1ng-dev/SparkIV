@@ -233,6 +233,11 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
             break;
         }
         rotation[bone] = Normalized(q);
+        // An arm roll and the neck roll sit where their leader is (see CutscenePose.SkinAt, #129).
+        if ((kind == "armRoll" || kind == "neckRoll") && a >= 0 && _skeleton!.Parent[a] == _skeleton.Parent[bone])
+        {
+          position[bone] = position[a];
+        }
       }
       return (position, rotation);
     }

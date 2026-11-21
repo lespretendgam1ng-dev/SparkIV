@@ -268,6 +268,14 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
               break;
           }
           rotation[bone] = Quaternion.Normalize(q);
+          // An arm roll and the neck roll also sit where their leader (the upper arm, the head; same parent) is, not at
+          // their own rest place (#129, GTAIV.trace bc_1 s2 f715.5, Bernie's palette at call 120034252: at their rest
+          // places L_ArmRoll and R_ArmRoll were 6.2 mm off the game's = the upper arm's 0.1663 against their 0.1601 along
+          // the clavicle, Neck_Roll 79.5 mm = the head's 0.0795 from the neck against its 0; their turns within 0.07°).
+          if ((kind == "armRoll" || kind == "neckRoll") && a >= 0 && _parent[a] == _parent[bone])
+          {
+            position[bone] = position[a];
+          }
         }
       }
 
