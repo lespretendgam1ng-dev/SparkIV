@@ -303,7 +303,8 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
       for (int b = 0; b < n; b++)
       {
-        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || !tracked.Contains(b)))
+        // (The upper arm roll too, track or not: see CutscenePose, #141.)
+        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || kind == "upperArmRoll" || !tracked.Contains(b)))
         {
           _helpers.Add((b, kind, a, c));
         }

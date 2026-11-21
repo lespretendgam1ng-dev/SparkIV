@@ -157,7 +157,10 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
       for (int b = 0; b < n; b++)
       {
-        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || !tracked.Contains(b)))
+        // The game turns the forearm twist and the upper arm roll by its rule even where the clip has a track for them
+        // (#141: Elizabeta's clip in et01_aa turns L_/R_UpperArmRoll 21 / 13 degrees off the game's; with the rule
+        // within 0.04, GTAIV.2.trace s2 f79.5, palette at call 71241894).
+        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || kind == "upperArmRoll" || !tracked.Contains(b)))
         {
           _helpers.Add((b, kind, a, c));
         }
