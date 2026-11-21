@@ -345,7 +345,7 @@ float3 SkyLight(float3 dir)
   float c = dot(dir, sunDir);
   float a = saturate(saturate(1 - w.Hdr.z) * (12.58 * c - 11.6163721));
   float b = saturate(0.9375 - 0.0625 * c);
-  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + sunDir.z) + saturate(0.5 * c - 0.0625)) * 0.5) * 4;
+  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + abs(sunDir.z)) + saturate(0.5 * c + 0.5)) * 0.5) * 4;
   float3 sunLight = sun * w.SkySunColor.rgb;
   float3 sunLight2 = sunLight * sunLight;
   float3 glow = (sunLight + sunLight2 * sunLight2) * w.Hdr.y + saturate(saturate(1 - sun) * w.Hdr.y * skyV);

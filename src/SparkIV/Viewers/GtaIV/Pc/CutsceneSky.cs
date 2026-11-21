@@ -298,8 +298,9 @@ float4 PSSky(VsOut i) : SV_Target
   float c = dot(dir, sunDir);
   float a = saturate(saturate(1 - s.Hdr.z) * (12.58 * c - 11.6163721));
   float b = saturate(0.9375 - 0.0625 * c);
-  // SunSize 1 in both traces; the disc term x SunCentre.z (0 there) left out.
-  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + sunDir.z) + saturate(0.5 * c - 0.0625)) * 0.5) * 4;
+  // SunSize 1 in both traces; the disc term x SunCentre.z (0 there) left out. SunDirection.w is the sun's height
+  // without its sign (GTAIV.1 0.9226 at day, GTAIV.3 0.1833 at dawn with the sun 0.1833 below the horizon).
+  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + abs(sunDir.z)) + saturate(0.5 * c + 0.5)) * 0.5) * 4;
   float3 sunLight = sun * s.SunColor.rgb;
   float3 sunLight2 = sunLight * sunLight;
   float3 glow = (sunLight + sunLight2 * sunLight2) * s.Hdr.y + saturate(saturate(1 - sun) * s.Hdr.y * skyV);
