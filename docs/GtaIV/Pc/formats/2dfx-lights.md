@@ -4,6 +4,16 @@ Applies only to **GTA IV, PC version** (with TLAD and TBoGT). Overview of all fo
 
 Models (`.wdr`, `.wdd`, `.wft`) can contain light effects, i.e. lamps and wall lights. SparkIV reads them in `ModelScene` (`Lights`) and sends them to the view via `CutsceneLocation.LightsMessage`.
 
+**Where they are stored:** a model's drawable (gtaDrawable) holds `Collection<LightAttrs>` after its LOD fields; a
+fragment (`.wft`, e.g. the breakable street lamps of `pc\data\maps\props\roadside\lamppost.img`) holds it in its
+**gtaFragType at +0x210** (pointer, count, capacity), not in its drawable. Each entry is the same 0x6C-byte LightAttrs.
+`bm_nylamp1a.wft`: one light, colour 255/155/35, intensity 1.25, corona 0.8, range 35, distance 20, flags 0xC040.
+SparkIV read only the drawables' lights until 2026-11-22, so the street lamps had no corona and no light: in
+`GTAIV.3.trace` intro s4 f1833.25 the corona draw (call 160420308, vertex buffer from call 160420306) holds this lamp's
+corona (half a side 2.0, strength 1.4375 = 1.25 × SprBght 1.15) at the place SparkIV now computes to 1 cm; that corona
+is the large soft glow around the lamp (#137). Visual run: intro s4 f1833.25 −0.05, s5 f1149 −0.06, s6 f712.5 −0.04,
+nothing else changed (the vehicles' fragments hold no lights there). Source: `RageLib/Models/Resource/FragTypeModel.cs`.
+
 ## Fields
 
 | Field | Meaning | Source |

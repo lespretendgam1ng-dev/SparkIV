@@ -62,7 +62,7 @@ namespace RageLib.Models.Resource
     private uint Unk5 { get; set; }
 
     /// <summary>The drawable's lights (pointer, then count and capacity as two ushorts); empty without.</summary>
-    public LightAttributes[] Lights { get; private set; } = new LightAttributes[0];
+    public LightAttributes[] Lights { get; internal set; } = new LightAttributes[0];
 
     public void ReadData(BinaryReader br)
     {
