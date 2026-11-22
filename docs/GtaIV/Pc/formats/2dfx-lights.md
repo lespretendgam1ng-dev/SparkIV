@@ -143,6 +143,29 @@ That depth holds only the solid scene: the forward draws before it write to anot
 
 Not in SparkIV: the object's fading alpha (in `GTAIV.1.trace` only a few far objects, at 0.09–0.40 of 0.5), the types of light that blink by time (+0x58), the strength at 0x103F9A4 and the mirrored `paraboloid_corona` (below).
 
+### Traffic lights (#137, 2026-11-22)
+
+Objects whose `.ide` objs line has the **special attribute 3** (its fifth field; `traffic.ide`: every `BM_NYtraflite*`
+and `BM_NYpedcross*`) are traffic lights: GTAIV.exe sets the model info's +0x40 top byte to 3, and FUN_00a32640 then
+calls the traffic lights' code FUN_00d208f0 besides the usual lamps (their three 2dfx lights are still added as
+lamps by Entity_AddModelLights).
+
+| What | How | Source |
+|---|---|---|
+| Colour of each lamp | its 2dfx light's bytes: red under 201 green, else green over 100 amber, else red | FUN_00d208f0 |
+| Phase | the heading of its bone's x axis, atan2(−x, y) in degrees (0-360): between 60 and 150 or 240 and 330 the first, else the second | FUN_00d21040, FUN_00d210a0 |
+| State | the game clock (ms, DAT_01173608, the swell's clock) % 25000: first phase green < 10000, amber < 12500, red; second red < 12500, green < 22500, amber. A 40 s cycle only within boxes a script sets (0x15FFEC0) | FUN_00d210e0, FUN_00d21140, FUN_00af9050 |
+| Corona | the current colour's lamp only: (r, 255, r), (255, 128, r), (255, r, r) with r a small random byte; strength SprBght; half a side 0.0005 × 2500 = 1.25 m; moved 1 m towards the camera; within 60 m of the lamps' reference point P | FUN_009bbc70 → 0xC1F020 |
+| Facing | the corona's strength × the dot of the lamp's facing (minus its bone's y axis) with the camera's back; none at 0 or less | FUN_00c1ee40 |
+| Light | a spot of `visualSettings.dat` trafficLight.* (green / amber / red colour, intensity 20, falloffMax 14, cone 25 / 90°) 1 m below the lamps' middle | FUN_00d208f0 → 0xABCC50 |
+
+`GTAIV.3.trace` intro s5 f1149 (corona draw 231696510): green 2/255/2, half 1.25 m, strength 0.832 = 1.15 × 0.7235;
+the same lamp amber 255/128/1 in s4 f1833.25 (160420308) - with a clock running on through the sections, s4 from
+0 ms, s5 from 68267 ms, s6 from 116367 ms (the visual tests' `TRAFFICCLOCK`). SparkIV places that corona within 1 cm
+and gives it 0.832. In the app the clock is the section's time (the game's own at the cutscene's start isn't known).
+Not in SparkIV yet: the spot light, the separate glow sprites (`traffic_light_glow`, a list of up to 64 at
+0x128F5E0 faded beyond 45 m) and the lit lens of the current colour.
+
 ### Coronas in the mirrored surroundings' map (`paraboloid_corona`, #154b, 2026-11-07)
 
 The game also draws the coronas into the map of the surroundings that the sun pass mirrors (see

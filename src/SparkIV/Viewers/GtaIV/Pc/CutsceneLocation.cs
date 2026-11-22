@@ -82,6 +82,12 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     public List<string> ModelNames { get; } = new List<string>();
     public List<LocationObject> Objects { get; } = new List<LocationObject>();
 
+    /// <summary>
+    /// GTA IV (PC): the names of the models that are traffic lights (the .ide's special attribute 3), whose lights the
+    /// game draws by the traffic lights' state (CutsceneLights' traffic coronas).
+    /// </summary>
+    public HashSet<string> TrafficLightModels { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The rooms of the interiors placed there (but their "limbo", the shell around the rooms).</summary>
     public List<LocationRoom> Rooms { get; } = new List<LocationRoom>();
 
@@ -192,6 +198,13 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       /// the hour from h (0x1F0001F: 20 to 5 o'clock), by name. Objects not in it are always there.
       /// </summary>
       public Dictionary<string, uint> Hours { get; } = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+
+      /// <summary>
+      /// GTA IV (PC): the objects' special attribute (the objs line's fifth field), by name, where it isn't 0. 3: a
+      /// traffic light (traffic.ide's BM_NYtraflite*, BM_NYpedcross*; GTAIV.exe draws such an object's lights by the
+      /// traffic lights' state, FUN_00d208f0 on model info +0x40 top byte 3).
+      /// </summary>
+      public Dictionary<string, int> Specials { get; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
       /// <summary>The archive each dictionary (.wdd) is in, by its name.</summary>
       public Dictionary<string, string> DictionaryArchiveOf { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -317,6 +330,13 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           {
             shadowPlaces.Add((o.Name, at));
           }
+        }
+      }
+      foreach (var (special, value) in index.Specials)
+      {
+        if (value == 3)
+        {
+          location.TrafficLightModels.Add(special);
         }
       }
       float Bound(string name) => index.Sizes.TryGetValue(name, out var size) ? size.Radius : 0;
@@ -1061,7 +1081,7 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
         var nameOf = new Dictionary<uint, string>();
         foreach (var ide in MapFiles(folder, Path.Combine("pc", "data"), "*.ide", new HashSet<string>()))
         {
-          ReadIde(ide, nameOf, index.Interiors, index.Sizes, index.DictionaryOf, index.Hours);
+          ReadIde(ide, nameOf, index.Interiors, index.Sizes, index.DictionaryOf, index.Hours, index.Specials);
           ReadParticleFx(ide, index.ParticleFx);
         }
         var looseStart = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -1143,7 +1163,7 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     /// </summary>
     private static void ReadIde(string path, Dictionary<uint, string> nameOf, Dictionary<string, Interior> interiors,
                                 Dictionary<string, (float Draw, float Radius)> sizes, Dictionary<string, string> dictionaryOf,
-                                Dictionary<string, uint> hours)
+                                Dictionary<string, uint> hours, Dictionary<string, int> specials)
     {
       static float F(string s) => float.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture);
       string? section = null;
@@ -1205,6 +1225,10 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
             float.TryParse(fields[14 + shift], NumberStyles.Float, CultureInfo.InvariantCulture, out float bound))
         {
           sizes.TryAdd(fields[0], (draw, bound));
+          if (int.TryParse(fields[4 + shift], NumberStyles.Integer, CultureInfo.InvariantCulture, out int special) && special != 0)
+          {
+            specials.TryAdd(fields[0], special);
+          }
           if (fields.Length >= 16 + shift && fields[15 + shift].Length > 0 && !fields[15 + shift].Equals("null", StringComparison.OrdinalIgnoreCase))
           {
             dictionaryOf.TryAdd(fields[0], fields[15 + shift]);

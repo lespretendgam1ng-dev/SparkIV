@@ -1035,7 +1035,11 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           stage = GpuProfiler.Now;
         }
         // The lamps' coronas (the page's coronasNow), x the time cycle's SprBght outside a room.
-        coronas = lamps.CoronasNow(eyeAt, viewProjection, _lighting.Hour, _lighting.CycleAt(eyeAt, viewProjection).SpriteBrightness);
+        float spriteBrightness = _lighting.CycleAt(eyeAt, viewProjection).SpriteBrightness;
+        coronas = lamps.CoronasNow(eyeAt, viewProjection, _lighting.Hour, spriteBrightness);
+        // GTA IV (PC): the traffic lights' coronas by their state, the game clock taken as the section's time (the
+        // game's own clock at the cutscene's start isn't known).
+        coronas.AddRange(lamps.TrafficCoronas(eyeAt, viewForward, spriteBrightness, _time * 1000));
         volumes = lamps.VolumesNow(eyeAt, viewProjection, _lighting.Hour, _volumeLookupSet);
         profiler?.CpuSince("  update: coronas + volumes lists", stage);
       }

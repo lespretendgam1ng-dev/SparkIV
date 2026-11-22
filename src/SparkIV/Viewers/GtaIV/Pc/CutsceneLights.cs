@@ -67,8 +67,58 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     private readonly List<Lamp> _lamps = new List<Lamp>();
     // The lamps' coronas (place, colour, half a side, intensity, 2dfx flags, room).
     private readonly List<(Vector3 At, Vector3 Rgb, float Size, float Intensity, uint Flags, int Room)> _coronas = new();
+    // The traffic lights' lamps (place, colour 0 green / 1 amber / 2 red, which phase, the way it faces).
+    private readonly List<(Vector3 At, int Colour, bool First, Vector3 Faces)> _traffic = new();
     private readonly IReadOnlyList<LocationRoom> _rooms;
     private List<CutLight> _cut = new List<CutLight>();
+
+    /// <summary>
+    /// GTA IV (PC): a traffic light's state at the game clock (ms; GTAIV.exe DAT_01173608, the clock the swell runs on
+    /// too): 0 green, 1 amber, 2 red. Two phases half a cycle apart, by the light's heading; the 25 s cycle (the 40 s one
+    /// only within areas a script sets, 0x15FFEC0, none here). First (FUN_00d210e0): green to 10 s, amber to 12.5 s, then
+    /// red; second (FUN_00d21140): red to 12.5 s, green to 22.5 s, then amber.
+    /// </summary>
+    public static int TrafficState(bool first, double clockMs)
+    {
+      long t = (long)Math.Floor(clockMs) % 25000;
+      if (t < 0)
+      {
+        t += 25000;
+      }
+      return first ? (t < 10000 ? 0 : t < 12500 ? 1 : 2) : (t < 12500 ? 2 : t < 22500 ? 0 : 1);
+    }
+
+    /// <summary>
+    /// GTA IV (PC): the traffic lights' coronas at the game clock (ms): of each traffic light (.ide special attribute 3)
+    /// the lamp of its current colour, within 60 m of the camera (GTAIV.exe FUN_009bbc70, from the lamps' reference
+    /// point - the camera here); colour green (r, 255, r), amber (255, 128, r), red (255, r, r), r a small random byte
+    /// (2.5 here); half a side 0.0005 x 2500 = 1.25 m; strength SprBght x the way it faces against the camera's view
+    /// (FUN_00c1ee40: the dot of its facing with the view; none at 0 or less); moved 1 m towards the camera.
+    /// GTAIV.3.trace intro s5 f1149 (call 231696510): green 2/255/2, half 1.25, 0.832; s4 f1833.25 the same lamp amber.
+    /// </summary>
+    public List<Corona> TrafficCoronas(Vector3 eye, Vector3 forward, float spriteBrightness, double clockMs)
+    {
+      var list = new List<Corona>();
+      const float tiny = 2.5f / 255;
+      foreach (var (at, colour, first, faces) in _traffic)
+      {
+        if (colour != TrafficState(first, clockMs) || Vector3.Distance(at, eye) > 60 || list.Count >= 64)
+        {
+          continue;
+        }
+        // (Against the camera's back: GTAIV.3.trace s5 f1149 gives the lamp facing the camera 0.832 = 1.15 x 0.7235.)
+        float facing = Vector3.Dot(faces, -forward);
+        if (!(facing > 0))
+        {
+          continue;
+        }
+        var rgb = colour == 0 ? new Vector3(tiny, 1, tiny) : colour == 1 ? new Vector3(1, 128f / 255, tiny) : new Vector3(1, tiny, tiny);
+        var away = eye - at;
+        float d = away.Length();
+        list.Add(new Corona { At = d > 1 ? at + away / d : at, Color = rgb * (spriteBrightness * facing), Size = 1.25f });
+      }
+      return list;
+    }
 
     /// <summary>The lamps of a location's objects (none without one).</summary>
     public CutsceneLights(CutsceneLocation? location)
@@ -90,6 +140,25 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
             var cAt = Vector3.Transform(light.Position, obj.Place);
             _coronas.Add((cAt, new Vector3(light.Red, light.Green, light.Blue), light.CoronaSize * 2.5f, light.Intensity, light.Flags,
                            RoomOfObject(obj, cAt)));
+          }
+          // A traffic light's lamp: its corona by the traffic lights' state (TrafficCoronas).
+          if (location.TrafficLightModels.Contains(location.ModelNames[obj.Model]))
+          {
+            var frame = light.Frame * obj.Place;
+            // Its colour by its bytes, as FUN_00d208f0: red under 201 green (0), else green over 100 amber (1), else red (2).
+            byte r = (byte)Math.Round(light.Red * 255), g = (byte)Math.Round(light.Green * 255);
+            int colour = r < 201 ? 0 : g > 100 ? 1 : 2;
+            // Which of the two phases it follows, by the heading of its bone's x axis (FUN_00d21040: atan2(-x, y) in
+            // degrees, 0 to 360; FUN_00d210a0: between 60 and 150 or 240 and 330 the first, else the second).
+            float heading = MathF.Atan2(-frame.M11, frame.M12) * 180 / MathF.PI;
+            while (heading < 0)
+            {
+              heading += 360;
+            }
+            bool first = (heading > 60 && heading < 150) || (heading > 240 && heading < 330);
+            // It faces along minus its bone's y axis (FUN_009bbc70: the direction row 1 x -1).
+            var faces = -new Vector3(frame.M21, frame.M22, frame.M23);
+            _traffic.Add((Vector3.Transform(light.Position, obj.Place), colour, first, faces));
           }
           float range = light.Distance > 0 ? light.Distance : light.Range;
           if (!(range > 0))

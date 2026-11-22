@@ -843,7 +843,7 @@ namespace SparkIV.WinUI.Viewers
                                     light.IsSpot, light.Range, light.Falloff, meshIds, light.Distance, light.HotSpot, light.Intensity)
                      {
                        Flags = light.Flags, CoronaSize = light.CoronaSize, VolumeIntensity = light.VolumeIntensity, VolumeSize = light.VolumeSize,
-                       FadeDistance = light.FadeDistance,
+                       FadeDistance = light.FadeDistance, Frame = at,
                        Tangent = System.Numerics.Vector3.TransformNormal(new System.Numerics.Vector3(light.Tangent.X, light.Tangent.Y, light.Tangent.Z), at),
                      });
         }
@@ -1380,6 +1380,10 @@ namespace SparkIV.WinUI.Viewers
 
     /// <summary>Its second axis (a spot's "up"; the light volume's mesh is turned by it).</summary>
     public System.Numerics.Vector3 Tangent { get; init; }
+
+    /// <summary>The frame of the bone it moves with, in its rest pose (identity at the root): GTA IV's traffic lights
+    /// take their facing from it.</summary>
+    public System.Numerics.Matrix4x4 Frame { get; init; } = System.Numerics.Matrix4x4.Identity;
   }
 
   /// <summary>A bone: its place and turn relative to its parent (Euler angles in radians, as RageLib reads them).</summary>
