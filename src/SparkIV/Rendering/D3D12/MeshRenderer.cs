@@ -1851,11 +1851,11 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       {
         new StaticSamplerDescription(ShaderVisibility.Pixel, 0, 0)
         {
-          Filter = Filter.Anisotropic,
+          Filter = TextureFilter == 0 ? Filter.MinMagMipLinear : Filter.Anisotropic,
           AddressU = TextureAddressMode.Wrap,
           AddressV = TextureAddressMode.Wrap,
           AddressW = TextureAddressMode.Wrap,
-          MaxAnisotropy = 16,
+          MaxAnisotropy = (uint)Math.Clamp(TextureFilter, 1, 16),
           MaxLOD = float.MaxValue,
         },
         // The mirrored surroundings' map as the page reads it (LINEAR_MIPMAP_LINEAR, CLAMP_TO_EDGE; gtaiv-pc.js ~1214-1218).
@@ -2396,6 +2396,12 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
 
     /// <summary>The textures on the GPU, those that couldn't be made (drawn white), and their bytes.</summary>
     public (int Made, int Failed, long Bytes) TextureStats => (_textures.Count, _textures.Failed, _textures.Bytes);
+
+    /// <summary>The materials' texture filter (read when the renderer is made): 0 trilinear, as the game with its
+    /// "Tri-Linear" texture filter setting (the reference videos'); 2-16 anisotropic with that many samples. Anisotropic
+    /// reads a wet normal map's fine detail at grazing angles, which makes the mirrored surroundings glitter where the
+    /// game's ground stays smooth (#154: all 72 references equal or better with trilinear).</summary>
+    public static int TextureFilter { get; set; }
 
     /// <summary>Solid map materials without any texture drawn white, as before #130 (for comparisons).</summary>
     public static bool UntexturedWhite { get; set; }
@@ -4519,6 +4525,58 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         list.DrawInstanced(3, 1, 0, 0);
       }
       list.ResourceBarrierTransition(_parabolic, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource, ParabolicLevels - 1);
+    }
+
+    // (For comparisons with the game's map: its level 0 copied into a readback buffer, then saved as "W H\n" and the
+    // texels' half floats, RGBA, rows from the top.)
+    private ID3D12Resource? _mapReadback;
+    private uint _mapPitch;
+
+    /// <summary>The mirrored surroundings' map's level 0 copied for <see cref="SaveParabolicMap"/> (after Draw, same list).</summary>
+    public void CopyParabolicMap(ID3D12GraphicsCommandList list)
+    {
+      if (_parabolic == null)
+      {
+        return;
+      }
+      _mapPitch = (ParabolicSize * 8 + 255) & ~255u;
+      _mapReadback ??= _device.Device.CreateCommittedResource(new HeapProperties(HeapType.Readback), HeapFlags.None,
+                                                              ResourceDescription.Buffer((ulong)_mapPitch * ParabolicSize), ResourceStates.CopyDest);
+      list.ResourceBarrierTransition(_parabolic, ResourceStates.PixelShaderResource, ResourceStates.CopySource, 0);
+      var footprint = new PlacedSubresourceFootPrint
+      {
+        Offset = 0,
+        Footprint = new SubresourceFootPrint(Format.R16G16B16A16_Float, ParabolicSize, ParabolicSize, 1, _mapPitch),
+      };
+      list.CopyTextureRegion(new TextureCopyLocation(_mapReadback, footprint), 0, 0, 0, new TextureCopyLocation(_parabolic, 0), null);
+      list.ResourceBarrierTransition(_parabolic, ResourceStates.CopySource, ResourceStates.PixelShaderResource, 0);
+    }
+
+    /// <summary>The map copied by <see cref="CopyParabolicMap"/> saved (once the GPU is past it).</summary>
+    public unsafe void SaveParabolicMap(string path)
+    {
+      if (_mapReadback == null)
+      {
+        return;
+      }
+      void* mapped;
+      _mapReadback.Map(0, null, &mapped).CheckError();
+      try
+      {
+        using var fs = System.IO.File.Create(path);
+        var header = System.Text.Encoding.ASCII.GetBytes(ParabolicSize + " " + ParabolicSize + "\n");
+        fs.Write(header, 0, header.Length);
+        var row = new byte[ParabolicSize * 8];
+        for (uint y = 0; y < ParabolicSize; y++)
+        {
+          System.Runtime.InteropServices.Marshal.Copy((IntPtr)((byte*)mapped + (long)y * _mapPitch), row, 0, row.Length);
+          fs.Write(row, 0, row.Length);
+        }
+      }
+      finally
+      {
+        _mapReadback.Unmap(0, null);
+      }
     }
 
     // The mirrored surroundings' map's states into a list (this frame's or a worker's): its level 0 and depth, the main

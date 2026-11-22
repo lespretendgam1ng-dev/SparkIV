@@ -600,6 +600,13 @@ The game's parabolic map of the surroundings (EnvironmentSampler / ParabSampler)
   4 - 4 saturate(power / 230) x saturate(5 R'.z) x (1 - saturate(d / 100))) and vehicleShine (paint the same with the
   vertex colour's luminance; vehicle glass s² x lum x the map at lod 0 x saturate(5 R.z) x (1.6 f + 0.4) x 36 x
   globalScalars.w x reflectivity; badges and lamp glass x 18).
+- *Texture filter* (`MeshRenderer.TextureFilter`, cutgen `D3D12TEXFILTER`): the materials are read trilinearly
+  (MIN/MAG/MIP linear, no anisotropy), as the game with its "Tri-Linear" texture filter setting used for the reference
+  videos. The game's sun pass reads the mirrored map the same way SparkIV does (trace GTAIV.3, intro s4 f2013.5, draw
+  169724434: Fresnel 0.75 (1 - |v.n|)^4 + 0.25, lod 4 - 4 saturate(GB2.y² x 512 x c72.x), c72.x = 1 / 230). The
+  difference was the normal: 16x anisotropic filtering kept a wet ground's fine normal-map detail at grazing angles,
+  so the map's reflection glittered and came out about 10 % brighter where the game's ground stays smooth. Visual run
+  2026-11-22_17-24: all 72 references equal or better (up to -0.21).
 - Not ported: the page's (1 - map alpha) x the sky's colour (its `skyColor`/`skyTopColor` in picture units, unmapped)
   where the map's alpha is under 1 - only at the circle's blurred rim -, and its caching of the map (drawn every frame
   here). cutgen: `D3D12NOPARABOLIC=1`.
