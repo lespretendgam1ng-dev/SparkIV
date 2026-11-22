@@ -118,6 +118,24 @@
                                           OnContent="" OffContent="" MinWidth="0" Toggled="SeeThroughSwitch_Toggled" />
                         </Grid>
                     </Border>
+                    <Border Padding="16,12,16,12" CornerRadius="4" BorderThickness="1"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Smooth edges" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="Smooths jagged edges in cutscenes and locations (FXAA). The game itself doesn't smooth edges on PC; off: the picture as the game draws it." />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="SmoothEdgesSwitch" Grid.Column="1" VerticalAlignment="Center"
+                                          OnContent="" OffContent="" MinWidth="0" Toggled="SmoothEdgesSwitch_Toggled" />
+                        </Grid>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

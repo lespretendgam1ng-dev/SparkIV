@@ -39,6 +39,8 @@ namespace SparkIV.WinUI.Services
 
       public bool CutsceneSeeThroughLikeGame { get; set; } = true;
 
+      public bool SmoothEdges { get; set; } = true;
+
       public string? UpdateChannel { get; set; }
     }
 
@@ -63,6 +65,20 @@ namespace SparkIV.WinUI.Services
       set
       {
         Load().CutsceneSeeThroughLikeGame = value;
+        Save();
+      }
+    }
+
+    /// <summary>
+    /// Smooth the edges of the 3D views' pictures (FXAA after the tone mapping). The game itself smooths none on PC;
+    /// the pictures for comparisons with it (cutgen) are always made without.
+    /// </summary>
+    public static bool SmoothEdges
+    {
+      get => Load().SmoothEdges;
+      set
+      {
+        Load().SmoothEdges = value;
         Save();
       }
     }

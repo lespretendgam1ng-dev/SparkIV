@@ -58,6 +58,7 @@ namespace SparkIV.WinUI
       }
       ShowBackupFolder();
       SeeThroughSwitch.IsOn = AppSettings.CutsceneSeeThroughLikeGame;
+      SmoothEdgesSwitch.IsOn = AppSettings.SmoothEdges;
       VersionText.Text = "Installed: SparkIV " + Updates.CurrentVersion;
       ChannelBox.SelectedIndex = (int)Updates.Channel;
       AboutVersionText.Text = "SparkIV " + Updates.CurrentVersion;
@@ -125,6 +126,9 @@ namespace SparkIV.WinUI
 
     private void SeeThroughSwitch_Toggled(object sender, RoutedEventArgs e) =>
       AppSettings.CutsceneSeeThroughLikeGame = SeeThroughSwitch.IsOn;
+
+    private void SmoothEdgesSwitch_Toggled(object sender, RoutedEventArgs e) =>
+      AppSettings.SmoothEdges = SmoothEdgesSwitch.IsOn;
 
     private void ChannelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

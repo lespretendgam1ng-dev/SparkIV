@@ -179,6 +179,8 @@ namespace SparkIV.WinUI.Rendering.D3D12
           else
           {
             _toneMapper.Resize(_swapChain.Width, _swapChain.Height);
+            // Edge smoothing by the setting (only here: cutgen's pictures for the comparisons with the game stay without).
+            _toneMapper.AntiAliasing = SparkIV.WinUI.Services.AppSettings.SmoothEdges;
             // The eye adapts to the last measure read (a few frames old): gently while playing, at once when stopped.
             _toneMapper.ReadMeasure(wait: false);
             _toneMapper.Adapt(view.Tone, view.Playing, last > 0 ? now - last : 0);
