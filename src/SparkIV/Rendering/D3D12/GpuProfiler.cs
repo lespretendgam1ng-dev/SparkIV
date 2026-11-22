@@ -392,6 +392,22 @@ namespace SparkIV.WinUI.Rendering.D3D12
         string.Join(", ", cpu.Select(x => x.Name.Trim() + " " + x.Ms.ToString("0.0", inv))));
     }
 
+    /// <summary>
+    /// The <paramref name="index"/>-th frame gathered (in the order read), as <see cref="LastFrame"/> - for a bench's long
+    /// frames. Passes not in every frame may be off by the frames they were missing from.
+    /// </summary>
+    public string FrameAt(int index, int top)
+    {
+      var inv = CultureInfo.InvariantCulture;
+      static double At(Series s, int i) => i >= 0 && i < s.Values.Count ? s.Values[i] : 0;
+      int frame = _nameIndex.TryGetValue(FrameName, out int f) ? f : -1;
+      var gpu = _gpu.Select((s, n) => (Name: _names[n], Ms: At(s, index))).Where(x => x.Name != FrameName && x.Ms > 0).OrderByDescending(x => x.Ms).Take(top);
+      var cpu = _cpu.Select((s, i) => (Name: _cpuNames[i], Ms: At(s, index), Count: _isCount[i])).Where(x => !x.Count && x.Ms > 0).OrderByDescending(x => x.Ms).Take(top);
+      return string.Format(inv, "GPU {0:0.0} ms [{1}] CPU [{2}]", frame >= 0 ? At(_gpu[frame], index) : 0,
+        string.Join(", ", gpu.Select(x => x.Name.Trim() + " " + x.Ms.ToString("0.0", inv))),
+        string.Join(", ", cpu.Select(x => x.Name.Trim() + " " + x.Ms.ToString("0.0", inv))));
+    }
+
     /// <summary>The last frame read's GPU total (ms; 0 before any).</summary>
     public double LastGpuMs => _nameIndex.TryGetValue(FrameName, out int f) && f < _lastGpu.Length ? _lastGpu[f] : 0;
     /// <summary>Waits for the GPU and reads every frame sent (at the end of a bench).</summary>
