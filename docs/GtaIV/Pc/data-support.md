@@ -298,6 +298,23 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
     the traced game ran at 16–23 ms a frame, its clock not in step with the cutscene's time).
   - In SparkIV: `CutsceneWater.SwellClockMs` (cutgen `SWELLCLOCK`, `SWELLCLOCKS` = ms@frame from lauf.ps1); a changed
     clock makes the swell anew. Status: **used** (tests only; the app keeps 0).
+- **The swell's strength: the game clock counts whole milliseconds** (#148, 2026-11-22, GTAIV.exe):
+  - Every constant of the swell's step (0xADBA40, filled at 0xADB770) is SparkIV's: dt at most 0.13 (0xE85F70), pull 40,
+    rest 0.5, damping 0.7 per second, neighbours 0.17 / 0.08, 0.2 × 100² kicks of (0.7 wind + 0.23) × 10 × 0.5 × dt,
+    the rows' push sin(y × 0.15 + 2π (ms % 4000) / 4000) × (0.55 wind + 0.18) × dt (wind 0x12DDEB4 = 0 here).
+  - But the clock (0x1173608 = 0x11735B4) goes on by `(int)(frame seconds × 1000)` each frame (FUN_008d0cc0), while the
+    step takes the frame's full time: at 60 fps 16 ms of push phase per 16.67 ms of swell time, so the push runs at
+    96 % of its 1.571 rad/s. The swell's rows answer like a damped spring with about 1.30 rad/s of their own (k 0.3
+    per 2 m cell: 40 × (1 − 0.34 − 0.66 cos 0.3) + 0.5 = 1.68 = ω²; damping 0.357/s), so the push lies just above
+    their resonance and 4 % less frequency gives a stronger swell: settled height spread 0.134 m → 0.160 m (offline,
+    the game's grid in bc_3 s3 0.160).
+  - SparkIV now steps the swell by 1/60 s with the clock +16 ms a step (the game at 60 fps; at most the last 1800
+    steps, 30 s). The visual tests' clocks are measured anew for all 15 bc_3 references from the game's grids
+    (`GTAIV.1.trace`, the water draws' vertex normals): SparkIV's swell recomputed exactly for every clock 0–3984 ms
+    and its slopes (height 2 m before − after) fitted to the game's normals. The 60 fps model fits every reference
+    better than the old one (correlation s1 f984 0.870 → 0.907, s2 f1055 0.841 → 0.875, s3 f975 0.872 → 0.900, …).
+    A swell running before the cutscene (or on across sections) fits worse: the game's starts flat as SparkIV's.
+    Early in a section (bc_3 s1 f78.75, 2.6 s) the random kicks still outweigh the push (correlation 0.66).
 - **The near water's swell** (#13, 2026-10-28):
   - Recomputed per pixel with the trace's own inputs (depth s2, waves s0, mirror s1 at the first water draw 74265526), the near water came out 10–16 % brighter than the game's in a band 9–13 m off. The water's grid round the camera (the CPU swell, 2 m apart) passes its vertex normals into the slopes (r3 += v1.xy × near / v1.z). With them, read from the draws' vertex buffers, the band is gone and the game lies an even ~10 % above the mirror's term (its sun and glint).
   - The vertex normal is ≈ 0.95–0.98 × (height 2 m before − height 2 m after) (fitted on 1782 points, r 0.97–0.98), as SparkIV takes it. The game's grid has settled: heights' spread 0.10 m, normals 0.024 across and 0.065 along y.

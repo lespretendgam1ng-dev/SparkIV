@@ -143,9 +143,14 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     private const int SimCap = 18000;
     // A small step back while playing (the sound's sync nudging the clock) is held, not recomputed.
     private const int HoldSteps = 12;
-    // The sea swell: a step of 0.02 s from the section's start, at most the last 1500 (30 s, as the page's warm-up).
-    private const double SwellStepSeconds = 0.02;
-    private const int SwellCap = 1500;
+    // The sea swell: a step of 1/60 s (the game's frame at 60 fps) from the section's start, at most the last 1800
+    // (30 s). The game's clock, which drives the rows' push, goes on by the frame's whole milliseconds only
+    // (FUN_008d0cc0: clock += (int)(frame s × 1000)), so at 60 fps by 16 ms a step of 16.67: the push runs at 96 % of
+    // the swell's own time, nearer its resonance (about 1.3 rad/s against the push's 1.57), and the swell is some 19 %
+    // stronger than with the clock in step (#148).
+    private const double SwellStepSeconds = 1.0 / 60;
+    private const double SwellClockStepMs = 16;
+    private const int SwellCap = 1800;
 
     // The sea swell (0xADBA40, 0xADB770): 100 x 100 points 2 m apart, a 200 m window.
     private const int SwellSize = 100;
@@ -1502,7 +1507,7 @@ float4 PSWater(VsOut i) : SV_Target
       int to = (int)Math.Min(m, (long)from + budget);
       for (int j = from; j < to; j++)
       {
-        Advance((float)SwellStepSeconds, (j + 1) * 20.0 + SwellClockMs, kick, swell, j);
+        Advance((float)SwellStepSeconds, (j + 1) * SwellClockStepMs + SwellClockMs, kick, swell, j);
       }
       _swellM = to;
     }
