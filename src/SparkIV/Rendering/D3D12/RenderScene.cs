@@ -76,6 +76,32 @@ namespace SparkIV.WinUI.Rendering.D3D12
     void Draw(MeshRenderer renderer, Vortice.Direct3D12.ID3D12GraphicsCommandList list, Vortice.Direct3D12.ID3D12Resource target, int width, int height);
   }
 
+  /// <summary>
+  /// Particles of one sprite rule (#118; drawn by MeshRenderer.DrawParticles as GTA IV's gta_rmptfx_litsprite): its
+  /// texture (MeshRenderer.PrepareTexture's number) and atlas, the lighting numbers, and the particles, a matrix each:
+  /// row 0 the place (scene) and half size, row 1 the colour (0-1) and alpha, row 2 the angle (radians) and two atlas
+  /// cells (blended half and half).
+  /// </summary>
+  public sealed class ParticleBatch
+  {
+    public int Texture;
+    public int TilesX = 1;
+    public int TilesY = 1;
+    public Matrix4x4[] Particles = System.Array.Empty<Matrix4x4>();
+    public int Count;
+    public float WrapScale;
+    public float WrapBias;
+    public float Diffuse;
+    public float IntensityClamp = 1;
+    public float Shadow = 1;
+    public float AmbientAmount;
+    public float AmbientShadow;
+    public float HdrMultiplier = 1;
+    public float SuperAlpha = 1;
+    public float NearPlane;
+    public float ScaleFade = 1;
+  }
+
   /// <summary>Through what and in what light a frame is seen (see <see cref="IRenderScene"/>).</summary>
   public readonly record struct SceneView(Matrix4x4 ViewProjection, Vector3 Eye, FrameLight Light, ToneParams Tone, bool Playing)
   {
@@ -87,6 +113,9 @@ namespace SparkIV.WinUI.Rendering.D3D12
 
     /// <summary>The lamps' visible light volumes added after the scene (see <see cref="LightVolume"/>), or null.</summary>
     public System.Collections.Generic.IReadOnlyList<LightVolume>? Volumes { get; init; }
+
+    /// <summary>The particles blended over the scene before the coronas (see <see cref="ParticleBatch"/>), or null.</summary>
+    public System.Collections.Generic.IReadOnlyList<ParticleBatch>? Particles { get; init; }
 
     /// <summary>
     /// The mirrored surroundings' map wanted (outside): how far its objects are taken (the haze's end); null: no map.

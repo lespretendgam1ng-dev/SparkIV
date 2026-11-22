@@ -28,6 +28,7 @@ Detailed descriptions of individual formats with all findings are under [formats
 - [ide-mlo.md](formats/ide-mlo.md): interiors, rooms, portals
 - [timecyclemodifiers.md](formats/timecyclemodifiers.md): modifier columns, AmbientDownMult, GlobEnvRefl
 - [2dfx-lights.md](formats/2dfx-lights.md): lights in models, shadow lamps, lights for forward-drawn objects
+- [wpfl.md](formats/wpfl.md): particle effects (the libraries, the map's 2dfx particle entries, the plumes; #118)
 - [drawable.md](formats/drawable.md): the vertex buffer's layout in `.wdr` / `.wdd` / `.wft`; older patches' files
   (1.1.2.0) leave `pLockedData` null
 - [deferred_lighting.md](formats/deferred_lighting.md): lighting shaders, stencil, frame sequence

@@ -194,7 +194,8 @@ namespace SparkIV.WinUI.Rendering.D3D12
             _renderer.Draw(list, _toneMapper.LightView, _swapChain.DepthView, _swapChain.Width, _swapChain.Height, view.ViewProjection, view.Eye, view.Light,
                            l => _scene.DrawAfterSolid(_device, l, _toneMapper.LightView, _swapChain.DepthView, _swapChain.Width, _swapChain.Height, view, _swapChain.DepthBuffer),
                            view.Lights, _toneMapper.LightTexture, view.Coronas, _swapChain.DepthBuffer, view.Volumes,
-                           view.ParabolicHaze != null ? (l, t, n) => _scene.DrawParabolicSky(_device, l, t, n, view) : null, view.ParabolicHaze ?? 0);
+                           view.ParabolicHaze != null ? (l, t, n) => _scene.DrawParabolicSky(_device, l, t, n, view) : null, view.ParabolicHaze ?? 0,
+                           view.Particles);
             _toneMapper.EndLight(list);
             // Measured at most every 200 ms (as the page), else when the last measure is read.
             measured = now - _lastMeasure >= 0.2 && _toneMapper.Measure(list);

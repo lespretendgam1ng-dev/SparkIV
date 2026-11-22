@@ -166,12 +166,27 @@ namespace RageLib.Textures.Resource
       UnknownFloat5 = br.ReadSingle();
       UnknownFloat6 = br.ReadSingle();
 
-      PrevTextureInfoOffset = ResourceUtil.ReadOffset(br);
-      NextTextureInfoOffset = ResourceUtil.ReadOffset(br);
-
-      RawDataOffset = ResourceUtil.ReadDataOffset(br);
-
-      Unknown6 = br.ReadUInt32();
+      // GTA IV (PC): in a .wtd two links (prev, next) then the data; the particle libraries' textures (.wpfl) hold one
+      // link and the data a word earlier. The data is the one pointing into the graphics part (0x6...).
+      uint w0 = br.ReadUInt32(), w1 = br.ReadUInt32(), w2 = br.ReadUInt32();
+      if (w1 >> 28 == 6)
+      {
+        PrevTextureInfoOffset = w0 >> 28 == 5 ? w0 & 0x0fffffff : 0;
+        NextTextureInfoOffset = 0;
+        RawDataOffset = w1 & 0x0fffffff;
+        Unknown6 = w2;
+      }
+      else
+      {
+        if ((w0 != 0 && w0 >> 28 != 5) || (w1 != 0 && w1 >> 28 != 5) || (w2 != 0 && w2 >> 28 != 6))
+        {
+          throw new Exception("Expected an offset.");
+        }
+        PrevTextureInfoOffset = w0 & 0x0fffffff;
+        NextTextureInfoOffset = w1 & 0x0fffffff;
+        RawDataOffset = w2 & 0x0fffffff;
+        Unknown6 = br.ReadUInt32();
+      }
 
       // Read texture name
       br.BaseStream.Seek(nameOffset, SeekOrigin.Begin);
