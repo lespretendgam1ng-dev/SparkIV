@@ -1075,8 +1075,17 @@ float4 PSGlow(VsOut input) : SV_Target
   // PS 0x2d2e5740) fogs the light by the depth the glows wrote too (the credits stay bright over the far city). So a
   // glow blended over (gta_emissive) goes towards the fog's colour by its distance, an added one (the others) is
   // darkened by it - the same as the game's fog over the glow and what is behind it together.
+  // A glow blended over writes its depth, so the game's pass gives it the depth effect before the fog as well (#136,
+  // GTAIV.3.trace intro s2 f71.25: the credits' light 2.719 / 2.791 / 2.936 before the pass 9023536, 2.248 / 2.678 /
+  // 3.102 after = depth effect and fog at 63.25 m exactly; the luma's gamma brightens them about 10 %).
   float distance = length(f.Eye.xyz - input.world);
   float amount = FogAmount(distance);
+  if ((bits & FGlowOver) != 0)
+  {
+    // The game's pass sees the glow blended, a x glow + (1 - a) x what is behind; over a dark background that is the
+    // effect on a x glow (its luma's gamma taken there), divided by a again for the blend below.
+    rgb = DepthEffect(rgb * a, distance) / max(a, 1e-3);
+  }
   rgb = (bits & FGlowOver) != 0 ? lerp(rgb, FogColour(distance), amount) : rgb * (1 - amount);
   return float4(rgb * a, a);
 }

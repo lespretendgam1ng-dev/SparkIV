@@ -370,7 +370,11 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           // LodViewDistance), if any of it lies within the scene's draw distance (the camera's far plane cuts the
           // rest): bc_3 s2 f786 (GTAIV.1.trace, draws 136285573/579) shows SupLod_BkN_08 and _03, centres 779
           // and 844 m off, with the far plane at 780 m.
-          float draw = index.Sizes.TryGetValue(p.Name, out var size) ? size.Draw * LodViewDistance : farRadius;
+          // GTA IV (PC): a timed far version (tobj: the lit windows at night, LOD_*_NL_*) only up to its .ide distance,
+          // without the LOD view distance (#138): GTAIV.3.trace intro s2 f352.75 (the frame ending at call 19415728) draws
+          // none of the LOD_*_NL (700 m, emissive 16) 780 m and more off but their district's SLOD_NL (emissive 9).
+          float factor = index.Hours.ContainsKey(p.Name) && !TimedFarWithViewDistance ? 1 : LodViewDistance;
+          float draw = index.Sizes.TryGetValue(p.Name, out var size) ? size.Draw * factor : farRadius;
           return Distance(p.Position) <= draw && Distance(p.Position) - Bound(p.Name) <= farRadius;
         }
         var detail = new Dictionary<int, bool>();
@@ -895,6 +899,9 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     // setting / 99 x 1.275 + 0.725 (0x118D838), so 0.725 to 2.0. bc_3's tower blocks 752 m off (lod_bs_ten01,
     // .ide 550 m) are drawn in the game's frame (s2 f786), here only with this factor.
     private const float LodViewDistance = 2.0f;
+
+    /// <summary>The timed far versions also up to their .ide distance x the LOD view distance (as before #138). For comparisons.</summary>
+    public static bool TimedFarWithViewDistance { get; set; }
 
     /// <summary>
     /// The map's files of a kind under <paramref name="sub"/> (pc\data ...) as the game loads them. An episode
