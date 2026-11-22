@@ -2397,11 +2397,12 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     /// <summary>The textures on the GPU, those that couldn't be made (drawn white), and their bytes.</summary>
     public (int Made, int Failed, long Bytes) TextureStats => (_textures.Count, _textures.Failed, _textures.Bytes);
 
-    /// <summary>The materials' texture filter (read when the renderer is made): 0 trilinear, as the game with its
-    /// "Tri-Linear" texture filter setting (the reference videos'); 2-16 anisotropic with that many samples. Anisotropic
-    /// reads a wet normal map's fine detail at grazing angles, which makes the mirrored surroundings glitter where the
-    /// game's ground stays smooth (#154: all 72 references equal or better with trilinear).</summary>
-    public static int TextureFilter { get; set; }
+    /// <summary>The materials' texture filter (read when the renderer is made), as the game's "Texture Filter Quality":
+    /// 0 Tri-Linear, 2-16 anisotropic with that many samples (default 16, the app's setting). The comparisons take the
+    /// setting each reference was recorded with (Tri-Linear for all until 2026-11-22): anisotropic reads a wet normal
+    /// map's fine detail at grazing angles, which makes the mirrored surroundings glitter where a Tri-Linear game's
+    /// ground stays smooth (#154: all 72 references equal or better with Tri-Linear).</summary>
+    public static int TextureFilter { get; set; } = 16;
 
     /// <summary>Solid map materials without any texture drawn white, as before #130 (for comparisons).</summary>
     public static bool UntexturedWhite { get; set; }

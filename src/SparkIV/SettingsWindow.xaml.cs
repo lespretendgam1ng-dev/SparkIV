@@ -59,6 +59,7 @@ namespace SparkIV.WinUI
       ShowBackupFolder();
       SeeThroughSwitch.IsOn = AppSettings.CutsceneSeeThroughLikeGame;
       SmoothEdgesSwitch.IsOn = AppSettings.SmoothEdges;
+      TextureFilterBox.SelectedIndex = AppSettings.TextureFilter switch { 0 => 0, 2 => 1, 4 => 2, 8 => 3, _ => 4 };
       VersionText.Text = "Installed: SparkIV " + Updates.CurrentVersion;
       ChannelBox.SelectedIndex = (int)Updates.Channel;
       AboutVersionText.Text = "SparkIV " + Updates.CurrentVersion;
@@ -129,6 +130,14 @@ namespace SparkIV.WinUI
 
     private void SmoothEdgesSwitch_Toggled(object sender, RoutedEventArgs e) =>
       AppSettings.SmoothEdges = SmoothEdgesSwitch.IsOn;
+
+    private void TextureFilterBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+      if (TextureFilterBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int samples))
+      {
+        AppSettings.TextureFilter = samples;
+      }
+    }
 
     private void ChannelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

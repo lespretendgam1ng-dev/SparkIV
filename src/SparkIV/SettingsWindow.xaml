@@ -136,6 +136,30 @@
                                           OnContent="" OffContent="" MinWidth="0" Toggled="SmoothEdgesSwitch_Toggled" />
                         </Grid>
                     </Border>
+                    <Border Padding="16,12,16,12" CornerRadius="4" BorderThickness="1"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Texture filtering" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="The game's Texture Filter Quality setting. Anisotropic keeps ground and walls sharp at flat angles. Applies to views opened after the change." />
+                            </StackPanel>
+                            <ComboBox x:Name="TextureFilterBox" Grid.Column="1" VerticalAlignment="Center" MinWidth="160"
+                                      SelectionChanged="TextureFilterBox_SelectionChanged">
+                                <ComboBoxItem Content="Tri-Linear" Tag="0" />
+                                <ComboBoxItem Content="Anisotropic x2" Tag="2" />
+                                <ComboBoxItem Content="Anisotropic x4" Tag="4" />
+                                <ComboBoxItem Content="Anisotropic x8" Tag="8" />
+                                <ComboBoxItem Content="Anisotropic x16" Tag="16" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

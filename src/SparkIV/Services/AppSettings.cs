@@ -41,6 +41,8 @@ namespace SparkIV.WinUI.Services
 
       public bool SmoothEdges { get; set; } = true;
 
+      public int TextureFilter { get; set; } = 16;
+
       public string? UpdateChannel { get; set; }
     }
 
@@ -79,6 +81,21 @@ namespace SparkIV.WinUI.Services
       set
       {
         Load().SmoothEdges = value;
+        Save();
+      }
+    }
+
+    /// <summary>
+    /// The 3D views' texture filter as the game's "Texture Filter Quality" offers it: 0 Tri-Linear, 2, 4, 8 or 16
+    /// anisotropic samples (default 16). Read when a view's renderer is made. The pictures for comparisons with the game
+    /// (cutgen) take the setting each reference was recorded with instead (referenzen.json "texturfilter").
+    /// </summary>
+    public static int TextureFilter
+    {
+      get => Load().TextureFilter is 0 or 2 or 4 or 8 or 16 ? Load().TextureFilter : 16;
+      set
+      {
+        Load().TextureFilter = value;
         Save();
       }
     }

@@ -72,6 +72,8 @@ namespace SparkIV.WinUI.Rendering.D3D12
       _device = new D3D12Device();
       _swapChain = new PanelSwapChain(_device, panel, _width, _height, _scaleX, _scaleY);
       D3D12Device.Log("swap chain: at most " + _swapChain.MaximumFrameLatency + " frame(s) queued");
+      // The texture filter by the setting (read when the renderer is made; cutgen takes each reference's own).
+      MeshRenderer.TextureFilter = SparkIV.WinUI.Services.AppSettings.TextureFilter;
       _renderer = new MeshRenderer(_device, ToneMapper.LightFormat);
       _toneMapper = new ToneMapper(_device, PanelSwapChain.BackBufferFormat);
       _lines = new LineOverlay(_device, PanelSwapChain.BackBufferFormat, PanelSwapChain.DepthFormat);
