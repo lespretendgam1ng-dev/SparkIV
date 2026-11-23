@@ -19,13 +19,15 @@ This fork rebuilds SparkIV as a **WinUI 3 app on .NET 10**. Its viewers render t
   - **collision** (`.wbn`, `.wbd`);
   - text and data files, XML and a hex view.
 - An edit mode for changing game files. It has to be switched on after a warning. The original of every file is backed up before SparkIV first writes to it.
+- Experimental: browse the archives of **Red Dead Redemption 2** (PC), read-only, with the file names of [reditec/RAGE-StringsDatabase](https://github.com/reditec/RAGE-StringsDatabase). A one-time setup assistant reads the keys of the game's archives from the running game.
 
 ## Requirements
 
 - Windows 10 (1809) or later, x64.
-- A **legally owned copy** of GTA IV and/or Episodes from Liberty City for PC.
+- A **legally owned copy** of GTA IV and/or Episodes from Liberty City for PC (or of Red Dead Redemption 2 for PC, for its archives).
   - SparkIV reads the game's own files.
   - The key the game uses to encrypt its archives is read at run time from your game's executable.
+  - Red Dead Redemption 2: the keys are read once from the running game and kept on your PC; its own Oodle library decompresses the files.
   - No game data and no key is part of this repository.
 
 ## Installing
