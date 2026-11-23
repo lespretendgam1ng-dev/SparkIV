@@ -188,36 +188,31 @@ namespace RageLib.Rdr2.Pc
       return result;
     }
 
-    /// <summary>Core recovery with explicit fingerprint lists (used by tests).</summary>
-    public static Rdr2Secrets Extract(byte[] exe, string[] keyIds, string[] contextIds, string ivId, Action<string> log = null)
+    /// <summary>Maps a key fingerprint's list position to its TOC tag (the last entries use fixed tags).</summary>
+    private static int TagForIndex(int i) => i switch { 163 => 0xC0, 164 => 0xC5, 165 => 0xC6, _ => i };
+
+    /// <summary>
+    /// Scans an arbitrary buffer (the executable, or a region of the running game's memory) for the per-archive
+    /// keys, returning them indexed by TOC tag. Only the content that hashes to a known key fingerprint is kept,
+    /// so a scan of unrelated memory simply yields nothing.
+    /// </summary>
+    public static Dictionary<int, ulong[]> FindKeys(byte[] data, string[] keyIds = null)
     {
-      log ??= _ => { };
-      // Decode every wanted fingerprint; FindSecrets derives the distinct secret sizes from them.
+      keyIds ??= LoadIds("Rdr2KeyIds.txt");
       var wanted = new HashSet<Fp>();
       foreach (var id in keyIds) wanted.Add(DecodeId(id));
-      foreach (var id in contextIds) wanted.Add(DecodeId(id));
-      wanted.Add(DecodeId(ivId));
-
-      var store = FindSecrets(exe, wanted);
-      byte[] Get(string id) => store.TryGetValue(DecodeId(id), out var b) ? b : null;
-      log($"secrets found: {store.Count} / {wanted.Count}");
-
-      // Per-archive keys, indexed by their TOC tag (the last three use fixed tags).
+      var store = FindSecrets(data, wanted);
       var keys = new Dictionary<int, ulong[]>();
-      int keysFound = 0;
       for (int i = 0; i < keyIds.Length; i++)
-      {
-        var data = Get(keyIds[i]);
-        if (data == null) continue;
-        keysFound++;
-        int tag = i switch { 163 => 0xC0, 164 => 0xC5, 165 => 0xC6, _ => i };
-        keys[tag] = Words(data);
-      }
-      log($"keys found: {keysFound} / {keyIds.Length}");
-      if (keys.Count == 0) throw new InvalidDataException("No RDR2 TFIT2 keys found in the executable (packed or unexpected build?).");
+        if (store.TryGetValue(DecodeId(keyIds[i]), out var d))
+          keys[TagForIndex(i)] = Words(d);
+      return keys;
+    }
 
-      // Cipher tables, consumed from the context list in order:
-      //   init, 17 x (lookup, 16 x (masks, xor)), final masks, end table, final xor.
+    /// <summary>Builds the TFIT2 cipher and IV from secrets already located in <paramref name="store"/>.</summary>
+    private static (Tfit2Cipher cipher, byte[] iv) BuildCipher(Dictionary<Fp, byte[]> store, string[] contextIds, string ivId)
+    {
+      byte[] Get(string id) => store.TryGetValue(DecodeId(id), out var b) ? b : null;
       int ci = 0;
       byte[] NextCtx(string what)
       {
@@ -252,8 +247,93 @@ namespace RageLib.Rdr2.Pc
 
       var iv = Get(ivId) ?? throw new InvalidDataException("RDR2 cipher IV not found in the executable.");
       if (iv.Length != 16) throw new InvalidDataException("RDR2 cipher IV has the wrong size.");
+      return (cipher, iv);
+    }
 
+    /// <summary>Core recovery with explicit fingerprint lists (used by tests).</summary>
+    public static Rdr2Secrets Extract(byte[] exe, string[] keyIds, string[] contextIds, string ivId, Action<string> log = null)
+    {
+      log ??= _ => { };
+      var wanted = new HashSet<Fp>();
+      foreach (var id in keyIds) wanted.Add(DecodeId(id));
+      foreach (var id in contextIds) wanted.Add(DecodeId(id));
+      wanted.Add(DecodeId(ivId));
+
+      var store = FindSecrets(exe, wanted);
+      log($"secrets found: {store.Count} / {wanted.Count}");
+
+      var keys = new Dictionary<int, ulong[]>();
+      for (int i = 0; i < keyIds.Length; i++)
+        if (store.TryGetValue(DecodeId(keyIds[i]), out var d))
+          keys[TagForIndex(i)] = Words(d);
+      log($"keys found: {keys.Count} / {keyIds.Length}");
+      if (keys.Count == 0) throw new InvalidDataException("No RDR2 TFIT2 keys found in the executable (packed or unexpected build?).");
+
+      var (cipher, iv) = BuildCipher(store, contextIds, ivId);
       return new Rdr2Secrets(cipher, keys, iv);
+    }
+
+    /// <summary>
+    /// Builds a usable <see cref="Rdr2Secrets"/> from the cipher tables and IV in the user's own RDR2.exe plus a
+    /// set of per-archive keys obtained elsewhere (from the running game's memory, or a local cache). The retail
+    /// executable is protector-packed, so the full keys are not statically present; only the cipher tables and IV
+    /// are, and those are read here from <paramref name="exe"/>.
+    /// </summary>
+    public static Rdr2Secrets Create(byte[] exe, Dictionary<int, ulong[]> keys)
+    {
+      if (keys == null || keys.Count == 0)
+        throw new InvalidDataException("No RDR2 TFIT2 keys supplied (run the one-time key extraction with the game open).");
+      var contextIds = LoadIds("Rdr2ContextIds.txt");
+      var wanted = new HashSet<Fp>();
+      foreach (var id in contextIds) wanted.Add(DecodeId(id));
+      wanted.Add(DecodeId(IvId));
+      var store = FindSecrets(exe, wanted);
+      var (cipher, iv) = BuildCipher(store, contextIds, IvId);
+      return new Rdr2Secrets(cipher, new Dictionary<int, ulong[]>(keys), iv);
+    }
+
+    // -------------------------------------------------------------- key cache
+
+    private const uint CacheMagic = 0x32434B52; // "RKC2"
+    private const int KeyWords = 288 / 8;       // a TFIT2 key is 288 bytes = 36 little-endian words
+
+    /// <summary>Writes the recovered per-archive keys to a local cache file (never shipped; lives on the user's disk).</summary>
+    public static void SaveKeyCache(string path, IReadOnlyDictionary<int, ulong[]> keys)
+    {
+      var dir = Path.GetDirectoryName(path);
+      if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+      using var w = new BinaryWriter(File.Create(path));
+      w.Write(CacheMagic);
+      w.Write(keys.Count);
+      foreach (var (tag, words) in keys)
+      {
+        if (words.Length != KeyWords) throw new InvalidDataException("RDR2 key has the wrong size for the cache.");
+        w.Write(tag);
+        foreach (var word in words) w.Write(word);
+      }
+    }
+
+    /// <summary>Reads a previously saved key cache, or returns null if it is missing or unreadable.</summary>
+    public static Dictionary<int, ulong[]> LoadKeyCache(string path)
+    {
+      if (!File.Exists(path)) return null;
+      try
+      {
+        using var r = new BinaryReader(File.OpenRead(path));
+        if (r.ReadUInt32() != CacheMagic) return null;
+        int count = r.ReadInt32();
+        if (count < 0 || count > 4096) return null;
+        var keys = new Dictionary<int, ulong[]>(count);
+        for (int i = 0; i < count; i++)
+        {
+          int tag = r.ReadInt32();
+          var words = new ulong[KeyWords];
+          for (int k = 0; k < KeyWords; k++) words[k] = r.ReadUInt64();
+          keys[tag] = words;
+        }
+        return keys.Count == 0 ? null : keys;
+      }
+      catch (IOException) { return null; }   // includes EndOfStreamException for a truncated cache
     }
 
     private static string[] LoadIds(string resourceLeaf)
