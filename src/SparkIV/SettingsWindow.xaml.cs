@@ -234,6 +234,15 @@ namespace SparkIV.WinUI
       Grid.SetColumn(buttons, 1);
       grid.Children.Add(buttons);
 
+      // RDR2: its keys are read once from the running game; run that again (should an update change them).
+      Button? setup = null;
+      if (game == Games.Rdr2)
+      {
+        setup = new Button { Content = "Set up keys…" };
+        ToolTipService.SetToolTip(setup, "Read the keys of the game's archives from the running game again (the setup assistant)");
+        buttons.Children.Insert(0, setup);
+      }
+
       void Show()
       {
         string? stored = AppSettings.GetGamePath(game.Id, platform);
@@ -247,9 +256,42 @@ namespace SparkIV.WinUI
           : stored != null ? "The folder set doesn't contain the game any more" + (folder != null ? "; found automatically: " + folder : "")
           : folder != null ? edition + "Found automatically"
           : "Asked for when it is needed";
+        if (game == Games.Rdr2)
+        {
+          stateText.Text += Rdr2Support.IsSetUp ? "  ·  Keys set up" : "  ·  Keys not set up yet (asked for when the game is opened)";
+        }
         reset.IsEnabled = stored != null;
       }
       Show();
+
+      if (setup != null)
+      {
+        setup.Click += async (sender, args) =>
+        {
+          Info.IsOpen = false;
+          string? folder = Games.InstallFolder(game, platform);
+          if (folder == null)
+          {
+            (folder, string? error) = await GameFolders.PickAsync(this, game, platform);
+            if (error != null)
+            {
+              Info.Title = "Not a folder of " + game.Name;
+              Info.Message = error;
+              Info.IsOpen = true;
+            }
+            if (folder == null)
+            {
+              return;
+            }
+          }
+          var secrets = await Rdr2SetupWindow.RunAsync(folder);
+          if (secrets != null && Rdr2Support.Current?.GameFolder == folder)
+          {
+            Rdr2Support.Activate(folder, secrets);
+          }
+          Show();
+        };
+      }
 
       browse.Click += async (sender, args) =>
       {
