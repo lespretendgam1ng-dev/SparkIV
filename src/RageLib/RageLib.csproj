@@ -23,6 +23,8 @@
     <EmbeddedResource Include="Audio\SoundBank\Hashes\Names.txt" />
     <EmbeddedResource Include="FileSystem\RPF\KnownFilenames.txt" />
     <EmbeddedResource Include="Scripting\Script\NativesList.txt" />
+    <EmbeddedResource Include="Rdr2\Pc\Rdr2KeyIds.txt" />
+    <EmbeddedResource Include="Rdr2\Pc\Rdr2ContextIds.txt" />
   </ItemGroup>
 
   <ItemGroup>
