@@ -39,7 +39,9 @@ namespace SparkIV.WinUI
   /// </summary>
   public sealed partial class GameChooserWindow : Window
   {
-    private readonly TaskCompletionSource<GameInstall?> _result = new TaskCompletionSource<GameInstall?>();
+    // Continuations not inline: the window may be closing (X) when the result is set.
+    private readonly TaskCompletionSource<GameInstall?> _result = new TaskCompletionSource<GameInstall?>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _closed;
 
     /// <param name="path">The file the game is asked for; null when SparkIV starts and asks which game to open.</param>
     private GameChooserWindow(string? path, bool optional)
@@ -81,36 +83,41 @@ namespace SparkIV.WinUI
       AppWindow.Resize(new Windows.Graphics.SizeInt32(560, 520));
       CenterOnScreen();
 
-      foreach (var game in Games.All)
+      // For a file: the games it can be from. An RDR2 archive (RPF8) is only RDR2's; any other file only GTA IV's.
+      System.Collections.Generic.IEnumerable<Game> games = path == null ? Games.All
+                : RageLib.Rdr2.Pc.Rpf8Archive.IsRpf8File(path) ? new[] { Games.Rdr2 }
+                : Games.All.Where(g => g != Games.Rdr2);
+      foreach (var game in games)
       {
         GameList.Children.Add(CreateRow(game));
       }
 
-      Closed += (sender, args) => _result.TrySetResult(null);
+      Closed += (sender, args) =>
+      {
+        _closed = true;
+        _result.TrySetResult(null);
+      };
+    }
+
+    private async Task<GameInstall?> ResultAsync()
+    {
+      Activate();
+      GameInstall? install = await _result.Task;
+      if (!_closed)
+      {
+        Close();
+      }
+      return install;
     }
 
     /// <summary>
     /// Asks for the game of a file. Null if the user cancelled. <paramref name="optional"/>: the file
     /// opens without a game too (a web page), so cancelling is offered as "Without game".
     /// </summary>
-    internal static async Task<GameInstall?> AskAsync(string path, bool optional)
-    {
-      var window = new GameChooserWindow(path, optional);
-      window.Activate();
-      GameInstall? install = await window._result.Task;
-      window.Close();
-      return install;
-    }
+    internal static Task<GameInstall?> AskAsync(string path, bool optional) => new GameChooserWindow(path, optional).ResultAsync();
 
     /// <summary>Asks which game to open, as OpenIV does when it starts. Null if the window was closed.</summary>
-    internal static async Task<GameInstall?> ChooseGameAsync()
-    {
-      var window = new GameChooserWindow(null, optional: true);
-      window.Activate();
-      GameInstall? install = await window._result.Task;
-      window.Close();
-      return install;
-    }
+    internal static Task<GameInstall?> ChooseGameAsync() => new GameChooserWindow(null, optional: true).ResultAsync();
 
     private void CenterOnScreen()
     {

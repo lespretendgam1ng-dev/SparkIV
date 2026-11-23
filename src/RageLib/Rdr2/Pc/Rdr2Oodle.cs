@@ -57,7 +57,11 @@ namespace RageLib.Rdr2.Pc
         Array.Sort(candidates, StringComparer.OrdinalIgnoreCase);
         var dll = candidates[^1];
         if (!NativeLibrary.TryLoad(dll, out var handle)) return false;
-        if (!NativeLibrary.TryGetExport(handle, "OodleLZ_Decompress", out var fn)) return false;
+        if (!NativeLibrary.TryGetExport(handle, "OodleLZ_Decompress", out var fn))
+        {
+          NativeLibrary.Free(handle);
+          return false;
+        }
         _decompress = Marshal.GetDelegateForFunctionPointer<DecompressFn>(fn);
         _path = dll;
         return true;
@@ -75,7 +79,8 @@ namespace RageLib.Rdr2.Pc
       var dst = GCHandle.Alloc(output, GCHandleType.Pinned);
       try
       {
-        got = fn(src.AddrOfPinnedObject(), input.Length, dst.AddrOfPinnedObject(), size, 1, 0, 0, IntPtr.Zero, 0,
+        // fuzzSafe 0, as the tools that read RDR2 with this DLL call it; threadPhase 3 = unthreaded.
+        got = fn(src.AddrOfPinnedObject(), input.Length, dst.AddrOfPinnedObject(), size, 0, 0, 0, IntPtr.Zero, 0,
                  IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, 3);
       }
       finally

@@ -152,21 +152,26 @@ namespace SparkIV.WinUI.Services
       if (!current)
       {
         System.IO.Directory.CreateDirectory(folder);
-        string temp = target + ".tmp";
-        using (var input = new BrotliStream(System.IO.File.OpenRead(source), CompressionMode.Decompress))
-        using (var output = System.IO.File.Create(temp))
-        {
-          input.CopyTo(output);
-        }
+        // A temporary file of this process: two SparkIVs unpacking at once don't meet.
+        string temp = target + "." + Environment.ProcessId + ".tmp";
         try
         {
+          using (var input = new BrotliStream(System.IO.File.OpenRead(source), CompressionMode.Decompress))
+          using (var output = System.IO.File.Create(temp))
+          {
+            input.CopyTo(output);
+          }
           System.IO.File.Move(temp, target, true);
           System.IO.File.WriteAllText(stamp, id);
         }
         catch (IOException)
         {
           // Another SparkIV has the old one open: use that until next time.
-          System.IO.File.Delete(temp);
+          try { System.IO.File.Delete(temp); } catch (IOException) { }
+          if (!System.IO.File.Exists(target))
+          {
+            return null;
+          }
         }
       }
       return Rdr2Names.Open(target);

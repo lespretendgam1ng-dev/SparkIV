@@ -52,18 +52,21 @@ namespace SparkIV.WinUI
       {
         // Like OpenIV: which game to open; closed without one, the main window opens empty.
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+        GameInstall? chosen;
+        MainWindow window;
         try
         {
-          GameInstall? chosen = await GameChooserWindow.ChooseGameAsync();
-          var window = OpenMainWindow();
-          if (chosen != null)
-          {
-            await window.OpenGameAsync(chosen);
-          }
+          chosen = await GameChooserWindow.ChooseGameAsync();
+          window = OpenMainWindow();
         }
         finally
         {
+          // The main window is open now: closing it (also while the RDR2 setup runs) ends SparkIV as usual.
           DispatcherShutdownMode = DispatcherShutdownMode.OnLastWindowClose;
+        }
+        if (chosen != null)
+        {
+          await window.OpenGameAsync(chosen);
         }
         return;
       }

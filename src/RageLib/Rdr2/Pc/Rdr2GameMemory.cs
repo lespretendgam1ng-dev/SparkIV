@@ -185,7 +185,9 @@ namespace RageLib.Rdr2.Pc
             cancel.ThrowIfCancellationRequested();
             if (scan.Complete) break;
             int want = (int)Math.Min(ChunkSize + overlap, regionSize - pos);
-            if (ReadProcessMemory(h, (IntPtr)(baseAddr + pos), buffer, (IntPtr)want, out var read) && (long)read > 0)
+            // A partly readable piece (ERROR_PARTIAL_COPY) still counts with what was read.
+            ReadProcessMemory(h, (IntPtr)(baseAddr + pos), buffer, (IntPtr)want, out var read);
+            if ((long)read > 0)
             {
               scan.Add(buffer, (int)read);
               scanned += (long)read;

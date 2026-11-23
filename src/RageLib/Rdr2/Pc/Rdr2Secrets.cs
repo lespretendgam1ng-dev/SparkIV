@@ -442,7 +442,10 @@ namespace RageLib.Rdr2.Pc
         var bytes = exe?.Invoke();
         return bytes == null ? null : Create(bytes, keys);
       }
-      catch (IOException) { return null; }   // includes EndOfStreamException for a truncated cache
+      // A truncated or damaged cache, an unreadable one, or (old cache) an exe without the tables: set up again.
+      catch (IOException) { return null; }   // includes EndOfStreamException
+      catch (InvalidDataException) { return null; }
+      catch (UnauthorizedAccessException) { return null; }
     }
 
     private static void WriteKeys(BinaryWriter w, IReadOnlyDictionary<int, ulong[]> keys)
@@ -523,8 +526,9 @@ namespace RageLib.Rdr2.Pc
         throw new InvalidDataException($"RDR2 TFIT2 key 0x{tag:X2} is not present.");
       var iv = (byte[])_iv.Clone();
       var ct = new byte[16];
-      foreach (var (start, end) in ranges)
+      foreach (var (start, rangeEnd) in ranges)
       {
+        int end = Math.Min(rangeEnd, data.Length);
         for (int pos = start; pos + 16 <= end; pos += 16)
         {
           new ReadOnlySpan<byte>(data, pos, 16).CopyTo(ct);

@@ -126,10 +126,17 @@ namespace SparkIV.WinUI.Services
         {
           foreach (var item in System.IO.Directory.GetFiles(manifests, "*.item"))
           {
-            using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(item));
-            if (doc.RootElement.TryGetProperty("InstallLocation", out var location) && IsRdr2(location.GetString()))
+            try
             {
-              return location.GetString();
+              using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(item));
+              if (doc.RootElement.TryGetProperty("InstallLocation", out var location) && IsRdr2(location.GetString()))
+              {
+                return location.GetString();
+              }
+            }
+            catch (System.Exception)
+            {
+              // A manifest the launcher is writing, or not JSON: the next one.
             }
           }
         }

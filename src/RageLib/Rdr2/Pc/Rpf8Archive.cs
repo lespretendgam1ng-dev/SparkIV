@@ -217,7 +217,8 @@ namespace RageLib.Rdr2.Pc
       if (e.Resource) { start += 16; raw -= 16; }      // resource header
       if (raw < 0) throw new InvalidDataException("RPF8 entry payload is truncated.");
       long size = e.Size;
-      long length = e.Compressor == 0 ? size : raw;
+      // Stored entries are padded to 16 bytes on disk; the cipher works on whole blocks, so read the padding too.
+      long length = e.Compressor == 0 ? Math.Max(size, raw) : raw;
       if (start + length > _stream.Length) throw new InvalidDataException("RPF8 entry payload is out of range.");
       if (length > int.MaxValue || size > int.MaxValue) throw new InvalidDataException("RPF8 entry is too large.");
 

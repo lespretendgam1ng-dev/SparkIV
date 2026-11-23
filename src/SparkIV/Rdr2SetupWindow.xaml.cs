@@ -43,7 +43,13 @@ namespace SparkIV.WinUI
   /// </summary>
   public sealed partial class Rdr2SetupWindow : Window
   {
-    private readonly TaskCompletionSource<Rdr2Secrets?> _result = new TaskCompletionSource<Rdr2Secrets?>();
+    // Continuations not inline: the window may be closing (X) when the result is set.
+    private readonly TaskCompletionSource<Rdr2Secrets?> _result = new TaskCompletionSource<Rdr2Secrets?>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _closed;
+
+    // One setup at a time (it reads the game's memory): a second request waits for the open one.
+    private static Rdr2SetupWindow? s_open;
+    private static Task<Rdr2Secrets?>? s_running;
     private readonly string _gameFolder;
     private readonly List<(string Title, FrameworkElement Page)> _steps = new List<(string, FrameworkElement)>();
     private readonly List<(Border Number, TextBlock Title)> _stepRows = new List<(Border, TextBlock)>();
@@ -96,6 +102,7 @@ namespace SparkIV.WinUI
 
       Closed += (sender, args) =>
       {
+        _closed = true;
         _timer.Stop();
         _extracting?.Cancel();
         // Once read, the keys are saved: the setup is done even if the window is closed early.
@@ -107,13 +114,40 @@ namespace SparkIV.WinUI
     /// Runs the setup for the install in <paramref name="gameFolder"/>. Returns the keys read and saved, or null if it
     /// was cancelled before they were read.
     /// </summary>
-    internal static async Task<Rdr2Secrets?> RunAsync(string gameFolder)
+    internal static Task<Rdr2Secrets?> RunAsync(string gameFolder)
+    {
+      if (s_running != null)
+      {
+        s_open?.Activate();
+        return s_running;
+      }
+      var task = RunOnceAsync(gameFolder);
+      if (!task.IsCompleted)
+      {
+        s_running = task;
+      }
+      return task;
+    }
+
+    private static async Task<Rdr2Secrets?> RunOnceAsync(string gameFolder)
     {
       var window = new Rdr2SetupWindow(gameFolder);
-      window.Activate();
-      var secrets = await window._result.Task;
-      window.Close();
-      return secrets;
+      s_open = window;
+      try
+      {
+        window.Activate();
+        var secrets = await window._result.Task;
+        if (!window._closed)
+        {
+          window.Close();
+        }
+        return secrets;
+      }
+      finally
+      {
+        s_open = null;
+        s_running = null;
+      }
     }
 
     private void CenterOnScreen()
@@ -276,28 +310,37 @@ namespace SparkIV.WinUI
       _extractProgress.Visibility = Visibility.Visible;
       _extractProgress.Value = 0;
       _extractText.Text = "Searching the game's memory ...";
+      var queue = DispatcherQueue; // taken here, on the window's thread
       try
       {
         string exe = Rdr2Support.ExePath(_gameFolder);
         var secrets = await Task.Run(() => Rdr2GameMemory.ExtractFromRunningGame(exe,
-          progress: p => DispatcherQueue.TryEnqueue(() => _extractProgress.Value = p), cancel: token));
+          progress: p => queue.TryEnqueue(() => { if (!_closed) _extractProgress.Value = p; }), cancel: token));
+        // Cancelled or closed meanwhile: not set up (nothing saved).
+        token.ThrowIfCancellationRequested();
         await Task.Run(() => secrets.SaveCache(Rdr2GameMemory.DefaultCachePath));
         _secrets = secrets;
-        _extractText.Text = "✓  " + secrets.KeyCount + " keys and the cipher tables were found and saved. Click Next.";
+        if (!_closed)
+        {
+          _extractText.Text = "✓  " + secrets.KeyCount + " keys and the cipher tables were found and saved. Click Next.";
+        }
       }
       catch (OperationCanceledException)
       {
-        _extractText.Text = "Cancelled.";
+        if (!_closed) _extractText.Text = "Cancelled.";
       }
       catch (Exception ex)
       {
-        _extractText.Text = "⚠  " + ex.Message;
+        if (!_closed) _extractText.Text = "⚠  " + ex.Message;
       }
       finally
       {
         _extracting = null;
-        _extractProgress.Visibility = Visibility.Collapsed;
-        UpdateStatus();
+        if (!_closed)
+        {
+          _extractProgress.Visibility = Visibility.Collapsed;
+          UpdateStatus();
+        }
       }
     }
 

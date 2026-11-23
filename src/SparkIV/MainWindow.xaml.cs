@@ -41,6 +41,8 @@ namespace SparkIV.WinUI
   public sealed partial class MainWindow : Window
   {
     private readonly Volumes _volumes = new Volumes();
+    // Closed while something was still opening (the RDR2 setup can take minutes): what comes after is dropped.
+    private bool _closed;
     private readonly Stack<Location> _back = new Stack<Location>();
     private readonly Stack<Location> _forward = new Stack<Location>();
     private readonly HashSet<Volume> _modified = new HashSet<Volume>();
@@ -71,6 +73,7 @@ namespace SparkIV.WinUI
 
       Closed += (sender, args) =>
       {
+        _closed = true;
         _volumes.Dispose();
         _externalEdits?.Dispose();
         EditMode.Changed -= UpdateEditModeButton;
@@ -157,7 +160,7 @@ namespace SparkIV.WinUI
       string gameName = install.Game == Games.GtaIV ? "GTA IV" : install.Game.Name;
       await RunBusyAsync(async () =>
       {
-        if (!await LoadKeyAsync(install))
+        if (!await LoadKeyAsync(install) || _closed)
         {
           return;
         }
@@ -290,6 +293,10 @@ namespace SparkIV.WinUI
       if (secrets == null)
       {
         secrets = await Rdr2SetupWindow.RunAsync(gameFolder);
+        if (_closed)
+        {
+          return false;
+        }
         if (secrets == null)
         {
           ShowMessage(InfoBarSeverity.Informational, "Red Dead Redemption 2 not set up",
@@ -1285,12 +1292,19 @@ namespace SparkIV.WinUI
       }
       finally
       {
-        Busy.IsActive = false;
+        if (!_closed)
+        {
+          Busy.IsActive = false;
+        }
       }
     }
 
     private void ShowMessage(InfoBarSeverity severity, string title, string message, string? actionLabel = null, Action? action = null)
     {
+      if (_closed)
+      {
+        return;
+      }
       Info.Severity = severity;
       Info.Title = title;
       Info.Message = message;
