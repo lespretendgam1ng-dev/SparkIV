@@ -66,6 +66,9 @@
             <AppBarButton x:Name="OpenEpisodesButton" Label="Episodes" Click="OpenEpisodes_Click" ToolTipService.ToolTip="Browse the Episodes from Liberty City (also the Complete Edition)">
                 <AppBarButton.Icon><FontIcon Glyph="&#xE7FC;" /></AppBarButton.Icon>
             </AppBarButton>
+            <AppBarButton x:Name="OpenRdr2Button" Label="RDR2" Click="OpenRdr2_Click" ToolTipService.ToolTip="Browse the Red Dead Redemption 2 game folder (read-only)">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE7FC;" /></AppBarButton.Icon>
+            </AppBarButton>
             <AppBarButton x:Name="OpenArchiveButton" Label="Open archive" Click="OpenArchive_Click" ToolTipService.ToolTip="Open an RPF or IMG archive">
                 <AppBarButton.Icon><FontIcon Glyph="&#xE8E5;" /></AppBarButton.Icon>
             </AppBarButton>

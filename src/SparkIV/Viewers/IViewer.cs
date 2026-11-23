@@ -103,7 +103,10 @@ namespace SparkIV.WinUI.Viewers
       {
         ByExtension[ext] = text;
       }
-      ByExtension[".xml"] = new XmlViewer();
+      var xml = new XmlViewer();
+      ByExtension[".xml"] = xml;
+      // Red Dead Redemption 2's .meta files are XML text.
+      ByExtension[".meta"] = xml;
       ByExtension[".sco"] = new ScriptViewer();
       ByExtension[".ivaud"] = new AudioViewer();
       ByExtension[".wtd"] = new TextureViewer();

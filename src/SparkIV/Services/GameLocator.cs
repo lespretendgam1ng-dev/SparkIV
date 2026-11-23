@@ -65,6 +65,84 @@ namespace SparkIV.WinUI.Services
     }
 
     /// <summary>
+    /// Red Dead Redemption 2 found without asking: the Rockstar Games Launcher's registry entry, else Steam's
+    /// libraries (app 1174180), else the Epic Games Launcher's manifests. The folder must contain RDR2.exe.
+    /// </summary>
+    public static string? FindRdr2Directory()
+    {
+      static bool IsRdr2(string? folder) => !string.IsNullOrEmpty(folder) && System.IO.File.Exists(Path.Combine(folder, "RDR2.exe"));
+
+      foreach (var key in new[] { @"SOFTWARE\WOW6432Node\Rockstar Games\Red Dead Redemption 2", @"SOFTWARE\Rockstar Games\Red Dead Redemption 2" })
+      {
+        try
+        {
+          using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key);
+          if (k?.GetValue("InstallFolder") is string folder && IsRdr2(folder))
+          {
+            return folder.TrimEnd('\\');
+          }
+        }
+        catch (System.Exception)
+        {
+          // Not readable: try the next place.
+        }
+      }
+
+      try
+      {
+        using var steam = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Valve\Steam");
+        if (steam?.GetValue("InstallPath") is string steamPath)
+        {
+          var libraries = new System.Collections.Generic.List<string> { steamPath };
+          string vdf = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+          if (System.IO.File.Exists(vdf))
+          {
+            foreach (System.Text.RegularExpressions.Match m in
+                     System.Text.RegularExpressions.Regex.Matches(System.IO.File.ReadAllText(vdf), "\"path\"\\s+\"([^\"]+)\""))
+            {
+              libraries.Add(m.Groups[1].Value.Replace(@"\\", @"\"));
+            }
+          }
+          foreach (var library in libraries)
+          {
+            string folder = Path.Combine(library, "steamapps", "common", "Red Dead Redemption 2");
+            if (IsRdr2(folder))
+            {
+              return folder;
+            }
+          }
+        }
+      }
+      catch (System.Exception)
+      {
+        // No Steam, or its files are not readable.
+      }
+
+      try
+      {
+        string manifests = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.CommonApplicationData),
+                                        "Epic", "EpicGamesLauncher", "Data", "Manifests");
+        if (System.IO.Directory.Exists(manifests))
+        {
+          foreach (var item in System.IO.Directory.GetFiles(manifests, "*.item"))
+          {
+            using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(item));
+            if (doc.RootElement.TryGetProperty("InstallLocation", out var location) && IsRdr2(location.GetString()))
+            {
+              return location.GetString();
+            }
+          }
+        }
+      }
+      catch (System.Exception)
+      {
+        // No Epic Games Launcher, or a manifest it is still writing.
+      }
+
+      return null;
+    }
+
+    /// <summary>
     /// Checks a folder the user picked. Returns the key util to use, or null if it isn't the game.
     /// </summary>
     public static KeyUtil? Check(string path, bool episodes)

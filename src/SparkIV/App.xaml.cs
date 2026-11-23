@@ -50,7 +50,21 @@ namespace SparkIV.WinUI
       string? path = FileLaunch.FileFromCommandLine();
       if (path == null)
       {
-        OpenMainWindow();
+        // Like OpenIV: which game to open; closed without one, the main window opens empty.
+        DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+        try
+        {
+          GameInstall? chosen = await GameChooserWindow.ChooseGameAsync();
+          var window = OpenMainWindow();
+          if (chosen != null)
+          {
+            await window.OpenGameAsync(chosen);
+          }
+        }
+        finally
+        {
+          DispatcherShutdownMode = DispatcherShutdownMode.OnLastWindowClose;
+        }
         return;
       }
 

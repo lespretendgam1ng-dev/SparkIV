@@ -31,20 +31,32 @@ namespace SparkIV.WinUI.Services
   /// </summary>
   internal sealed class Game
   {
-    public Game(string id, string name, string shortName, string[] platforms, string[] contentFolders,
-                Func<string, KeyUtil?> check, Func<string?> find)
+    /// <param name="executable">The game's exe in its folder ("GTAIV.exe"), for the icon.</param>
+    /// <param name="isInstall">Whether a folder is the game's.</param>
+    /// <param name="check">The key util of a folder of a GTA IV-era game (null for a game without one, as RDR2).</param>
+    public Game(string id, string name, string shortName, string[] platforms, string[] contentFolders, string executable,
+                Func<string, bool> isInstall, Func<string, KeyUtil?> check, Func<string?> find)
     {
       Id = id;
       Name = name;
       ShortName = shortName;
       Platforms = platforms;
       ContentFolders = contentFolders;
+      Executable = executable;
+      _isInstall = isInstall;
       _check = check;
       _find = find;
     }
 
+    private readonly Func<string, bool> _isInstall;
     private readonly Func<string, KeyUtil?> _check;
     private readonly Func<string?> _find;
+
+    /// <summary>The game's exe in its folder ("GTAIV.exe").</summary>
+    public string Executable { get; }
+
+    /// <summary>Whether <paramref name="folder"/> is an installation of this game.</summary>
+    public bool IsInstall(string folder) => System.IO.Directory.Exists(folder) && _isInstall(folder);
 
     /// <summary>The name in the settings ("gtaiv").</summary>
     public string Id { get; }
@@ -63,7 +75,10 @@ namespace SparkIV.WinUI.Services
     /// </summary>
     public IReadOnlyList<string> ContentFolders { get; }
 
-    /// <summary>The key util for a folder of this game, or null if the folder isn't the game.</summary>
+    /// <summary>
+    /// The key util for a folder of this game, or null if the folder isn't the game. Only GTA IV and the episodes
+    /// have one (their archives' AES key); RDR2's archives use <see cref="Rdr2Support"/>.
+    /// </summary>
     public KeyUtil? Check(string folder) => System.IO.Directory.Exists(folder) ? _check(folder) : null;
 
     /// <summary>The install found without asking (working directory, path file, registry), or null.</summary>
@@ -81,17 +96,26 @@ namespace SparkIV.WinUI.Services
   internal static class Games
   {
     public static Game GtaIV { get; } = new Game(
-      "gtaiv", "Grand Theft Auto IV", "IV", new[] { "Windows" }, new[] { "" },
+      "gtaiv", "Grand Theft Auto IV", "IV", new[] { "Windows" }, new[] { "" }, "GTAIV.exe",
+      folder => System.IO.File.Exists(Path.Combine(folder, "GTAIV.exe")),
       folder => System.IO.File.Exists(Path.Combine(folder, "GTAIV.exe")) ? new KeyUtilGTAIV() : null,
       () => GameLocator.FindGameDirectory(episodes: false, out _));
 
     public static Game Episodes { get; } = new Game(
-      "eflc", "Episodes from Liberty City", "EFLC", new[] { "Windows" }, new[] { "TBoGT", "TLAD", "" },
+      "eflc", "Episodes from Liberty City", "EFLC", new[] { "Windows" }, new[] { "TBoGT", "TLAD", "" }, "EFLC.exe",
+      folder => GameLocator.Check(folder, episodes: true) != null,
       folder => GameLocator.Check(folder, episodes: true),
       () => GameLocator.FindGameDirectory(episodes: true, out _));
 
+    /// <summary>Red Dead Redemption 2 (PC): RPF8 archives, keys from the game itself (see <see cref="Rdr2Support"/>).</summary>
+    public static Game Rdr2 { get; } = new Game(
+      "rdr2", "Red Dead Redemption 2", "RDR2", new[] { "Windows" }, new[] { "" }, "RDR2.exe",
+      folder => System.IO.File.Exists(Path.Combine(folder, "RDR2.exe")),
+      folder => null,
+      GameLocator.FindRdr2Directory);
+
     /// <summary>In the order the choice offers them.</summary>
-    public static IReadOnlyList<Game> All { get; } = new[] { GtaIV, Episodes };
+    public static IReadOnlyList<Game> All { get; } = new[] { GtaIV, Episodes, Rdr2 };
 
     /// <summary>
     /// The game of what is open: models find their textures through its .ide files, web pages copied out
@@ -112,7 +136,7 @@ namespace SparkIV.WinUI.Services
     public static string? InstallFolder(Game game, string platform)
     {
       string? stored = AppSettings.GetGamePath(game.Id, platform);
-      if (stored != null && game.Check(stored) != null)
+      if (stored != null && game.IsInstall(stored))
       {
         return stored;
       }
@@ -130,6 +154,10 @@ namespace SparkIV.WinUI.Services
       for (var dir = new DirectoryInfo(Path.GetDirectoryName(full)!); dir != null; dir = dir.Parent)
       {
         string folder = dir.FullName;
+        if (System.IO.File.Exists(Path.Combine(folder, "RDR2.exe")))
+        {
+          return new GameInstall(Rdr2, folder, "Windows");
+        }
         if (System.IO.File.Exists(Path.Combine(folder, "EFLC.exe")))
         {
           return new GameInstall(Episodes, folder, "Windows");

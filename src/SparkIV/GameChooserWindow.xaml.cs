@@ -41,16 +41,26 @@ namespace SparkIV.WinUI
   {
     private readonly TaskCompletionSource<GameInstall?> _result = new TaskCompletionSource<GameInstall?>();
 
-    private GameChooserWindow(string path, bool optional)
+    /// <param name="path">The file the game is asked for; null when SparkIV starts and asks which game to open.</param>
+    private GameChooserWindow(string? path, bool optional)
     {
       InitializeComponent();
 
       Title = "Select game - SparkIV";
       TitleText.Text = "Select game";
-      FileText.Text = Path.GetFileName(path) + " is not in a game folder. " +
-                      (optional ? "With its game, the page shows the game's texts and links to the other sites."
-                                : "SparkIV needs the game for the key of the archive.");
-      CancelButton.Content = optional ? "Without game" : "Cancel";
+      if (path == null)
+      {
+        QuestionText.Text = "Which game do you want to open?";
+        FileText.Text = "SparkIV shows the game's folder and archives.";
+        CancelButton.Content = "Close";
+      }
+      else
+      {
+        FileText.Text = Path.GetFileName(path) + " is not in a game folder. " +
+                        (optional ? "With its game, the page shows the game's texts and links to the other sites."
+                                  : "SparkIV needs the game for the key of the archive.");
+        CancelButton.Content = optional ? "Without game" : "Cancel";
+      }
       HintText.Text = "The folder of a game is asked for once and remembered; it can be changed in the settings.";
 
       ExtendsContentIntoTitleBar = true;
@@ -86,6 +96,16 @@ namespace SparkIV.WinUI
     internal static async Task<GameInstall?> AskAsync(string path, bool optional)
     {
       var window = new GameChooserWindow(path, optional);
+      window.Activate();
+      GameInstall? install = await window._result.Task;
+      window.Close();
+      return install;
+    }
+
+    /// <summary>Asks which game to open, as OpenIV does when it starts. Null if the window was closed.</summary>
+    internal static async Task<GameInstall?> ChooseGameAsync()
+    {
+      var window = new GameChooserWindow(null, optional: true);
       window.Activate();
       GameInstall? install = await window._result.Task;
       window.Close();
@@ -142,7 +162,7 @@ namespace SparkIV.WinUI
     private static UIElement CreateTileContent(Game game)
     {
       string? folder = game.Platforms.Select(p => Games.InstallFolder(game, p)).FirstOrDefault(f => f != null);
-      string exe = game == Games.Episodes ? "EFLC.exe" : "GTAIV.exe";
+      string exe = game.Executable;
       if (folder != null && System.IO.File.Exists(Path.Combine(folder, exe)))
       {
         try

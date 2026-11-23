@@ -39,7 +39,7 @@
         </Grid>
 
         <StackPanel Grid.Row="1" Margin="24,12,24,12" Spacing="4">
-            <TextBlock Text="Which game is this file from?" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock x:Name="QuestionText" Text="Which game is this file from?" Style="{StaticResource SubtitleTextBlockStyle}" />
             <TextBlock x:Name="FileText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
 

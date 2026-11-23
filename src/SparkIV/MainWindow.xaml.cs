@@ -124,15 +124,14 @@ namespace SparkIV.WinUI
 
     #region Opening
 
-    private async void OpenGame_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(episodes: false);
+    private async void OpenGame_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(Games.GtaIV);
 
-    private async void OpenEpisodes_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(episodes: true);
+    private async void OpenEpisodes_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(Games.Episodes);
 
-    private async Task OpenGameAsync(bool episodes)
+    private async void OpenRdr2_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(Games.Rdr2);
+
+    private async Task OpenGameAsync(Game game)
     {
-      Game game = episodes ? Games.Episodes : Games.GtaIV;
-      string gameName = episodes ? "Episodes from Liberty City" : "GTA IV";
-
       // The folder set in the settings, else the one found; asked for once and then remembered.
       string? path = Games.InstallFolder(game, "Windows");
       if (path == null)
@@ -149,7 +148,13 @@ namespace SparkIV.WinUI
         path = folder;
       }
 
-      var install = new GameInstall(game, path, "Windows");
+      await OpenGameAsync(new GameInstall(game, path, "Windows"));
+    }
+
+    /// <summary>Browses a game's folder (also the game chosen when SparkIV starts).</summary>
+    internal async Task OpenGameAsync(GameInstall install)
+    {
+      string gameName = install.Game == Games.GtaIV ? "GTA IV" : install.Game.Name;
       await RunBusyAsync(async () =>
       {
         if (!await LoadKeyAsync(install))
@@ -162,7 +167,10 @@ namespace SparkIV.WinUI
         // Models find their textures through the game's .ide files and shared dictionaries.
         Games.SetCurrent(install);
         ShowVolume(volume, gameName + "  \u00B7  " + install.Folder);
-        _ = IndexCutsceneScriptsAsync(install);
+        if (install.Game != Games.Rdr2)
+        {
+          _ = IndexCutsceneScriptsAsync(install);
+        }
       });
     }
 
@@ -255,6 +263,11 @@ namespace SparkIV.WinUI
     /// <summary>Reads the key for the archives from the game's exe; false (with a message) if it isn't there.</summary>
     private async Task<bool> LoadKeyAsync(GameInstall install)
     {
+      if (install.Game == Games.Rdr2)
+      {
+        return await PrepareRdr2Async(install.Folder);
+      }
+
       KeyUtil keyUtil = install.KeyUtil;
       byte[]? key = await Task.Run(() => keyUtil.FindKey(install.Folder));
       if (key == null)
@@ -264,6 +277,31 @@ namespace SparkIV.WinUI
         return false;
       }
       KeyStore.SetKeyLoader(() => key);
+      return true;
+    }
+
+    /// <summary>
+    /// RDR2: its keys come from the local cache; the first time, the setup assistant reads them from the running
+    /// game. False if they are not there (the assistant was cancelled) or could not be read.
+    /// </summary>
+    private async Task<bool> PrepareRdr2Async(string gameFolder)
+    {
+      var secrets = await Task.Run(() => Rdr2Support.LoadSecrets(gameFolder));
+      if (secrets == null)
+      {
+        secrets = await Rdr2SetupWindow.RunAsync(gameFolder);
+        if (secrets == null)
+        {
+          ShowMessage(InfoBarSeverity.Informational, "Red Dead Redemption 2 not set up",
+                      "SparkIV needs the game's keys once to read its archives. Open RDR2 again to run the setup.");
+          return false;
+        }
+      }
+      string? warning = await Task.Run(() => Rdr2Support.Activate(gameFolder, secrets));
+      if (warning != null)
+      {
+        ShowMessage(InfoBarSeverity.Warning, "Red Dead Redemption 2", warning);
+      }
       return true;
     }
 
@@ -513,7 +551,8 @@ namespace SparkIV.WinUI
       // long as they are in the same volume.
       Func<byte[], Task<string>>? ReplaceOf(File changed)
       {
-        if (!ReferenceEquals(RootOf(changed), volume.FileSystem.RootDirectory))
+        // Not in RDR2's archives: SparkIV can't write them.
+        if (!ReferenceEquals(RootOf(changed), volume.FileSystem.RootDirectory) || Volumes.IsReadOnly(volume))
         {
           return null;
         }
@@ -891,6 +930,16 @@ namespace SparkIV.WinUI
       }
       try
       {
+        if (Volumes.IsReadOnly(_current.Volume))
+        {
+          // RDR2's archives can't be changed: a copy to look at, not taken back.
+          string copy = _volumes.NewTempFile("-" + item.File.Name);
+          System.IO.File.WriteAllBytes(copy, item.File.GetData());
+          System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(copy) { UseShellExecute = true });
+          ShowMessage(InfoBarSeverity.Informational, item.Name + " opened in another program",
+                      "A copy: Red Dead Redemption 2's archives are read-only in SparkIV, so changes to it are not taken back.");
+          return;
+        }
         ExternalEdits.Open(item.File, _current.Volume);
         ShowMessage(InfoBarSeverity.Informational, item.Name + " opened in another program",
                     "Save it there; SparkIV then offers to take the change (edit mode needed). The game files are only written with Save.");
@@ -1218,7 +1267,7 @@ namespace SparkIV.WinUI
       ExportButton.IsEnabled = open && FileList.SelectedItems.Count > 0;
       ExportAllButton.IsEnabled = open;
       // Changing files only in edit mode.
-      ImportButton.IsEnabled = open && EditMode.IsOn;
+      ImportButton.IsEnabled = open && EditMode.IsOn && !Volumes.IsReadOnly(_current!.Volume);
       SaveButton.IsEnabled = _current != null && _modified.Contains(_current.Volume) && EditMode.IsOn;
       UpdateSaveShield();
     }

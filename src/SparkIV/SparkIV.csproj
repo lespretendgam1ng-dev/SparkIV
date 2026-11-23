@@ -50,6 +50,9 @@
     <Content Include="..\..\licenses\*.txt" Link="licenses\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Settings > About shows it, and after an update the new version's part (ChangelogDialog). -->
     <Content Include="..\..\CHANGELOG.md" Link="CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Names for the hashes RDR2 stores instead of names: reditec/RAGE-StringsDatabase compiled with its
+         build-sparkiv-database tool, Brotli-compressed; unpacked into the local app data on first use (Rdr2Support). -->
+    <Content Include="Data\RDR2.sivs.br" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Viewers\TextDocumentView.html" LogicalName="SparkIV.TextDocumentView.html" />
     <EmbeddedResource Include="Viewers\HexView.html" LogicalName="SparkIV.HexView.html" />
   </ItemGroup>

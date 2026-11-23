@@ -43,10 +43,10 @@ namespace SparkIV.WinUI.Services
         return (null, null);
       }
 
-      if (game.Check(picked.Path) == null)
+      if (!game.IsInstall(picked.Path))
       {
         return (null, picked.Path + " does not contain " +
-                      (game == Games.Episodes ? "EFLC.exe or the GTAIV.exe of the Complete Edition." : "GTAIV.exe."));
+                      (game == Games.Episodes ? "EFLC.exe or the GTAIV.exe of the Complete Edition." : game.Executable + "."));
       }
       AppSettings.SetGamePath(game.Id, platform, picked.Path);
       return (picked.Path, null);
