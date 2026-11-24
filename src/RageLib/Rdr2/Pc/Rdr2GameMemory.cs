@@ -123,20 +123,39 @@ namespace RageLib.Rdr2.Pc
       {
         foreach (var proc in procs)
         {
-          var scan = new Rdr2Secrets.Scan();
-          ScanProcess(proc.Id, scan, log, progress, cancel);
-          log($"keys found: {scan.KeysFound} of {scan.KeyTotal}; cipher tables found: {scan.CipherFound}");
-          if (scan.KeysFound == 0) continue;
-          if (scan.KeysFound < scan.KeyTotal)
-            throw new InvalidDataException($"Only {scan.KeysFound} of {scan.KeyTotal} keys were found in the game's memory. Wait until the story mode has fully loaded, then try again.");
-          byte[] exe = null;
-          if (!scan.CipherFound)
+          var watch = Stopwatch.StartNew();
+          IntPtr h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, proc.Id);
+          if (h == IntPtr.Zero)
+            throw new InvalidOperationException($"Could not read the game's memory (error {Marshal.GetLastWin32Error()}). Try running SparkIV as administrator.");
+          try
           {
-            if (exePath == null || !File.Exists(exePath))
-              throw new InvalidDataException("The cipher tables were not found in the game's memory, and RDR2.exe is not available.");
-            exe = File.ReadAllBytes(exePath);
+            var scan = new Rdr2Secrets.Scan();
+            var regions = Regions(h, log);
+            // Pass 1: the keys everywhere, the cipher tables only in the mapped modules (RDR2.exe's image): the
+            // tables are static data of the exe, and a search for them costs several passes per piece of memory.
+            ScanRegions(h, regions, scan, image => (keys: true, cipher: image), progress, 0, 1, cancel);
+            log($"keys found: {scan.KeysFound} of {scan.KeyTotal}; cipher tables found: {scan.CipherFound} ({watch.ElapsedMilliseconds} ms)");
+            if (scan.KeysFound == 0) continue;
+            if (scan.KeysFound < scan.KeyTotal)
+              throw new InvalidDataException($"Only {scan.KeysFound} of {scan.KeyTotal} keys were found in the game's memory. Wait until the story mode has fully loaded, then try again.");
+            if (scan.CipherFound) return scan.Build();
+
+            // The tables were not in the image: RDR2.exe on disk has them, else the rest of the memory (slow).
+            if (exePath != null && File.Exists(exePath))
+            {
+              try { return scan.Build(File.ReadAllBytes(exePath)); }
+              catch (InvalidDataException) { log("RDR2.exe has no cipher tables (incomplete download?)"); }
+            }
+            ScanRegions(h, regions, scan, image => (keys: false, cipher: !image), progress, 0, 1, cancel);
+            log($"cipher tables found: {scan.CipherFound} ({watch.ElapsedMilliseconds} ms)");
+            if (!scan.CipherFound)
+              throw new InvalidDataException("The cipher tables were found neither in the game's memory nor in RDR2.exe.");
+            return scan.Build();
           }
-          return scan.Build(exe);
+          finally
+          {
+            CloseHandle(h);
+          }
         }
       }
       finally
@@ -146,64 +165,86 @@ namespace RageLib.Rdr2.Pc
       throw new InvalidDataException("The game is running, but its keys were not found in its memory. Wait until the story mode has fully loaded, then try again.");
     }
 
-    private static void ScanProcess(int pid, Rdr2Secrets.Scan scan, Action<string> log, Action<double> progress, CancellationToken cancel)
+    private const uint MEM_IMAGE = 0x1000000;
+
+    /// <summary>The readable committed regions of the process (start, size, whether a mapped module).</summary>
+    private static List<(long start, long size, bool image)> Regions(IntPtr h, Action<string> log)
     {
-      IntPtr h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
-      if (h == IntPtr.Zero)
-        throw new InvalidOperationException($"Could not read the game's memory (error {Marshal.GetLastWin32Error()}). Try running SparkIV as administrator.");
-
-      const int ChunkSize = 16 * 1024 * 1024;      // read big regions in 16 MB pieces
-      int overlap = scan.MaxSecretLength - 1;      // so a table straddling a piece boundary is still seen
       long maxRegion = 1L << 31;                   // skip absurdly large single regions (reserved address space)
-
-      try
+      var regions = new List<(long, long, bool)>();
+      long total = 0, image = 0;
+      IntPtr addr = IntPtr.Zero;
+      while (VirtualQueryEx(h, addr, out var mbi, (IntPtr)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>()) != IntPtr.Zero)
       {
-        // The readable regions first, so the progress can be shown.
-        var regions = new List<(long start, long size)>();
-        long total = 0;
-        IntPtr addr = IntPtr.Zero;
-        while (VirtualQueryEx(h, addr, out var mbi, (IntPtr)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>()) != IntPtr.Zero)
+        long regionSize = (long)mbi.RegionSize;
+        if (regionSize <= 0) break;
+        long baseAddr = (long)mbi.BaseAddress;
+        bool readable = mbi.State == MEM_COMMIT && (mbi.Protect & READABLE) != 0 &&
+                        (mbi.Protect & PAGE_GUARD) == 0 && (mbi.Protect & PAGE_NOACCESS) == 0;
+        if (readable && regionSize <= maxRegion)
         {
-          long regionSize = (long)mbi.RegionSize;
-          if (regionSize <= 0) break;
-          long baseAddr = (long)mbi.BaseAddress;
-          bool readable = mbi.State == MEM_COMMIT && (mbi.Protect & READABLE) != 0 &&
-                          (mbi.Protect & PAGE_GUARD) == 0 && (mbi.Protect & PAGE_NOACCESS) == 0;
-          if (readable && regionSize <= maxRegion) { regions.Add((baseAddr, regionSize)); total += regionSize; }
-          long next = baseAddr + regionSize;
-          if (next <= baseAddr) break;         // overflow / end of address space
-          addr = (IntPtr)next;
+          bool isImage = mbi.Type == MEM_IMAGE;
+          regions.Add((baseAddr, regionSize, isImage));
+          total += regionSize;
+          if (isImage) image += regionSize;
         }
-        log($"readable memory: {total / (1024 * 1024)} MB in {regions.Count} regions");
+        long next = baseAddr + regionSize;
+        if (next <= baseAddr) break;         // overflow / end of address space
+        addr = (IntPtr)next;
+      }
+      log($"readable memory: {total / (1024 * 1024)} MB in {regions.Count} regions, {image / (1024 * 1024)} MB of them modules");
+      return regions;
+    }
 
-        var buffer = new byte[ChunkSize + overlap];
-        long done = 0, scanned = 0;
-        foreach (var (baseAddr, regionSize) in regions)
+    /// <summary>
+    /// Searches the regions in 16 MB pieces on several threads. <paramref name="what"/> says per region (by whether
+    /// it is a mapped module) what to look for; a piece is skipped once that is found.
+    /// </summary>
+    private static void ScanRegions(IntPtr h, List<(long start, long size, bool image)> regions, Rdr2Secrets.Scan scan,
+                                    Func<bool, (bool keys, bool cipher)> what, Action<double> progress,
+                                    double from, double to, CancellationToken cancel)
+    {
+      const int ChunkSize = 16 * 1024 * 1024;
+      int overlap = scan.MaxSecretLength - 1;      // so a table straddling a piece boundary is still seen
+
+      var pieces = new List<(long address, int length, bool keys, bool cipher)>();
+      long total = 0;
+      foreach (var (start, size, image) in regions)
+      {
+        var (keys, cipher) = what(image);
+        if (!keys && !cipher) continue;
+        for (long pos = 0; pos < size; pos += ChunkSize)
         {
-          for (long pos = 0; pos < regionSize; pos += ChunkSize)
+          int length = (int)Math.Min(ChunkSize + overlap, size - pos);
+          pieces.Add((start + pos, length, keys, cipher));
+          total += Math.Min(ChunkSize, size - pos);
+        }
+      }
+
+      long done = 0;
+      var options = new System.Threading.Tasks.ParallelOptions
+      {
+        CancellationToken = cancel,
+        // Half the cores: the game keeps running meanwhile.
+        MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 8),
+      };
+      System.Threading.Tasks.Parallel.ForEach(pieces, options,
+        () => new byte[ChunkSize + overlap],
+        (piece, state, buffer) =>
+        {
+          bool keys = piece.keys && !scan.KeysComplete, cipher = piece.cipher && !scan.CipherFound;
+          if (keys || cipher)
           {
-            cancel.ThrowIfCancellationRequested();
-            if (scan.Complete) break;
-            int want = (int)Math.Min(ChunkSize + overlap, regionSize - pos);
             // A partly readable piece (ERROR_PARTIAL_COPY) still counts with what was read.
-            ReadProcessMemory(h, (IntPtr)(baseAddr + pos), buffer, (IntPtr)want, out var read);
-            if ((long)read > 0)
-            {
-              scan.Add(buffer, (int)read);
-              scanned += (long)read;
-            }
-            progress?.Invoke(total == 0 ? 1 : Math.Min(1.0, (done + pos + ChunkSize) / (double)total));
+            ReadProcessMemory(h, (IntPtr)piece.address, buffer, (IntPtr)piece.length, out var read);
+            if ((long)read > 0) scan.Add(buffer, (int)read, keys, cipher);
           }
-          done += regionSize;
-          if (scan.Complete) break;
-        }
-        progress?.Invoke(1);
-        log($"searched {scanned / (1024 * 1024)} MB");
-      }
-      finally
-      {
-        CloseHandle(h);
-      }
+          long now = Interlocked.Add(ref done, Math.Min(ChunkSize, piece.length));
+          progress?.Invoke(from + (to - from) * (total == 0 ? 1 : Math.Min(1.0, now / (double)total)));
+          return buffer;
+        },
+        buffer => { });
+      progress?.Invoke(to);
     }
   }
 }

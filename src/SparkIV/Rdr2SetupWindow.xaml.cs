@@ -29,7 +29,6 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using RageLib.Rdr2.Pc;
 using SparkIV.WinUI.Services;
 
@@ -62,7 +61,6 @@ namespace SparkIV.WinUI
     private TextBlock _onlineText1 = null!, _onlineText6 = null!, _gameText2 = null!, _gameText5 = null!, _extractText = null!;
     private ProgressBar _extractProgress = null!;
     private Button _extractButton = null!;
-    private Storyboard? _windowedAnimation;
 
     private Rdr2SetupWindow(string gameFolder)
     {
@@ -180,9 +178,7 @@ namespace SparkIV.WinUI
       // 3
       _steps.Add(("Load the story mode", Page("Load the story mode",
         Para("Choose Story Mode and wait until the game has loaded completely: when you can move your character."),
-        Para("Then press Alt+Enter. The game leaves full screen and shows in a window, so you can switch back to SparkIV " +
-             "(Alt+Tab works too)."),
-        WindowedAnimation())));
+        Para("Then switch back to SparkIV and click Next."))));
 
       // 4
       _extractText = StatusText();
@@ -234,7 +230,6 @@ namespace SparkIV.WinUI
       BackButton.IsEnabled = index > 0 && !last;
       NextButton.Content = last ? "Finish" : "Next";
       CancelButton.IsEnabled = !last;
-      if (index == 2) _windowedAnimation?.Begin(); else _windowedAnimation?.Stop();
       UpdateStatus();
     }
 
@@ -397,104 +392,6 @@ namespace SparkIV.WinUI
       Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
       Margin = new Thickness(0, 4, 0, 0),
     };
-
-    /// <summary>
-    /// A small animation of Alt+Enter: the game fills the screen, the two keys are pressed, and it shrinks into a
-    /// window with a title bar, over and over.
-    /// </summary>
-    private UIElement WindowedAnimation()
-    {
-      const double ScreenW = 320, ScreenH = 180;
-      var accent = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
-      var stroke = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
-
-      var canvas = new Canvas { Width = ScreenW + 20, Height = ScreenH + 90, HorizontalAlignment = HorizontalAlignment.Left };
-
-      // The monitor and its stand.
-      var monitor = new Border { Width = ScreenW + 12, Height = ScreenH + 12, CornerRadius = new CornerRadius(8), BorderBrush = stroke, BorderThickness = new Thickness(2), Background = new SolidColorBrush(Colors.Black) };
-      canvas.Children.Add(monitor);
-      var stand = new Border { Width = 60, Height = 10, Background = stroke, CornerRadius = new CornerRadius(2) };
-      Canvas.SetLeft(stand, (ScreenW + 12 - 60) / 2);
-      Canvas.SetTop(stand, ScreenH + 14);
-      canvas.Children.Add(stand);
-
-      // The game: full screen at first; a window with a title bar afterwards.
-      var title = new Border { Height = 14, Background = (Brush)Application.Current.Resources["ControlFillColorDefaultBrush"], Opacity = 0 };
-      title.Child = new TextBlock { Text = "Red Dead Redemption 2", FontSize = 9, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-      var picture = new Border
-      {
-        Background = new LinearGradientBrush
-        {
-          StartPoint = new Windows.Foundation.Point(0, 0),
-          EndPoint = new Windows.Foundation.Point(0, 1),
-          GradientStops =
-          {
-            new GradientStop { Color = ColorHelper.FromArgb(255, 214, 120, 60), Offset = 0 },
-            new GradientStop { Color = ColorHelper.FromArgb(255, 120, 50, 30), Offset = 0.6 },
-            new GradientStop { Color = ColorHelper.FromArgb(255, 40, 25, 20), Offset = 1 },
-          },
-        },
-      };
-      picture.Child = new TextBlock { Text = "RDR2", FontWeight = FontWeights.Bold, FontSize = 28, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.85 };
-      var game = new Grid { Width = ScreenW, Height = ScreenH };
-      game.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-      game.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-      game.Children.Add(title);
-      Grid.SetRow(picture, 1);
-      game.Children.Add(picture);
-      var scale = new ScaleTransform { ScaleX = 1, ScaleY = 1, CenterX = ScreenW / 2, CenterY = ScreenH / 2 };
-      game.RenderTransform = scale;
-      Canvas.SetLeft(game, 8);
-      Canvas.SetTop(game, 8);
-      canvas.Children.Add(game);
-
-      // The keys: Alt + Enter.
-      var keys = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-      var alt = Key("Alt", 52);
-      var enter = Key("Enter", 72);
-      keys.Children.Add(alt);
-      keys.Children.Add(new TextBlock { Text = "+", VerticalAlignment = VerticalAlignment.Center, FontSize = 18 });
-      keys.Children.Add(enter);
-      Canvas.SetLeft(keys, (ScreenW + 12 - 52 - 72 - 8 * 2 - 12) / 2);
-      Canvas.SetTop(keys, ScreenH + 36);
-      canvas.Children.Add(keys);
-
-      // One cycle of 4 s: full screen, keys pressed at 1.0-1.4 s, window from 1.4 s, back to full screen at 3.6 s.
-      var sb = new Storyboard { RepeatBehavior = RepeatBehavior.Forever, Duration = TimeSpan.FromSeconds(4) };
-      void Keys(DependencyObject target, string property, params (double t, double v)[] frames)
-      {
-        var a = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromSeconds(4) };
-        foreach (var (t, v) in frames)
-        {
-          a.KeyFrames.Add(new LinearDoubleKeyFrame { KeyTime = TimeSpan.FromSeconds(t), Value = v });
-        }
-        Storyboard.SetTarget(a, target);
-        Storyboard.SetTargetProperty(a, property);
-        sb.Children.Add(a);
-      }
-      Keys(scale, "ScaleX", (0, 1), (1.4, 1), (1.8, 0.66), (3.6, 0.66), (3.9, 1), (4, 1));
-      Keys(scale, "ScaleY", (0, 1), (1.4, 1), (1.8, 0.66), (3.6, 0.66), (3.9, 1), (4, 1));
-      Keys(title, "Opacity", (0, 0), (1.6, 0), (1.8, 1), (3.6, 1), (3.7, 0), (4, 0));
-      foreach (var key in new[] { alt, enter })
-      {
-        var light = (Border)((Grid)key).Children[1];
-        Keys(light, "Opacity", (0, 0), (0.95, 0), (1.0, 1), (1.4, 1), (1.5, 0), (4, 0));
-      }
-      _windowedAnimation = sb;
-
-      var host = new StackPanel { Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
-      host.Children.Add(canvas);
-      return host;
-
-      Grid Key(string label, double width)
-      {
-        var g = new Grid { Width = width, Height = 36 };
-        g.Children.Add(new Border { CornerRadius = new CornerRadius(6), BorderBrush = stroke, BorderThickness = new Thickness(1.5), Background = (Brush)Application.Current.Resources["ControlFillColorDefaultBrush"] });
-        g.Children.Add(new Border { CornerRadius = new CornerRadius(6), Background = accent, Opacity = 0 });
-        g.Children.Add(new TextBlock { Text = label, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold });
-        return g;
-      }
-    }
 
     #endregion
 

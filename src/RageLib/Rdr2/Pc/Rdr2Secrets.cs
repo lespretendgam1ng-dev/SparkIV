@@ -110,7 +110,12 @@ namespace RageLib.Rdr2.Pc
     /// confirmed only where the hash matches a wanted value, so a 32 KB table costs one pass, not one per byte.
     /// </summary>
     private static Dictionary<Fp, byte[]> FindSecrets(byte[] exe, HashSet<Fp> wanted)
+      => FindSecrets(exe, exe.Length, wanted);
+
+    /// <summary>As above, over the first <paramref name="length"/> bytes of <paramref name="data"/>.</summary>
+    private static Dictionary<Fp, byte[]> FindSecrets(byte[] data, int length, HashSet<Fp> wanted)
     {
+      var exe = new ReadOnlySpan<byte>(data, 0, length);
       var found = new Dictionary<Fp, byte[]>();
       // Group wanted fingerprints by length, then by their rolling-hash value.
       var bySize = new Dictionary<int, Dictionary<uint, List<Fp>>>();
@@ -130,9 +135,9 @@ namespace RageLib.Rdr2.Pc
         {
           if (byHash.TryGetValue(rolling, out var candidates))
           {
-            var fp = Fingerprint(exe.AsSpan(start, size));
+            var fp = Fingerprint(exe.Slice(start, size));
             if (candidates.Contains(fp) && !found.ContainsKey(fp))
-              found[fp] = exe[start..(start + size)];
+              found[fp] = exe.Slice(start, size).ToArray();
           }
           if (start + size < exe.Length)
             unchecked { rolling = (rolling - exe[start] * factor + exe[start + size]) * Factor; }
@@ -328,7 +333,7 @@ namespace RageLib.Rdr2.Pc
       /// <summary>Number of the 165 per-archive keys found so far.</summary>
       public int KeysFound
       {
-        get { int n = 0; foreach (var fp in _keyFps) if (_store.ContainsKey(fp)) n++; return n; }
+        get { lock (_store) { int n = 0; foreach (var fp in _keyFps) if (_store.ContainsKey(fp)) n++; return n; } }
       }
 
       public int KeyTotal => _keyFps.Count;
@@ -336,20 +341,37 @@ namespace RageLib.Rdr2.Pc
       /// <summary>Whether all cipher tables and the IV were found.</summary>
       public bool CipherFound
       {
-        get { foreach (var fp in _cipherFps) if (!_store.ContainsKey(fp)) return false; return true; }
+        get { lock (_store) { foreach (var fp in _cipherFps) if (!_store.ContainsKey(fp)) return false; return true; } }
       }
 
-      public bool Complete => _wanted.Count == 0;
+      public bool Complete { get { lock (_store) return _wanted.Count == 0; } }
 
-      /// <summary>Searches <paramref name="buffer"/> (its first <paramref name="length"/> bytes) for what is still missing.</summary>
-      public void Add(byte[] buffer, int length)
+      /// <summary>Whether all 165 keys were found (the cipher tables may still be missing).</summary>
+      public bool KeysComplete => KeysFound == KeyTotal;
+
+      /// <summary>
+      /// Searches <paramref name="buffer"/> (its first <paramref name="length"/> bytes) for what is still missing:
+      /// the keys, the cipher tables, or both. Each length needs its own pass over the buffer, so a search for only
+      /// the keys (one length) is several times faster than one for everything. Safe to call from several threads.
+      /// </summary>
+      public void Add(byte[] buffer, int length, bool keys = true, bool cipher = true)
       {
-        if (_wanted.Count == 0 || length <= 0) return;
-        var data = length == buffer.Length ? buffer : buffer[..length];
-        foreach (var (fp, bytes) in FindSecrets(data, _wanted))
+        if (length <= 0) return;
+        var wanted = new HashSet<Fp>();
+        lock (_store)
         {
-          _store[fp] = bytes;
-          _wanted.Remove(fp);
+          foreach (var fp in _wanted)
+            if (keys && _keyFps.Contains(fp) || cipher && _cipherFps.Contains(fp)) wanted.Add(fp);
+        }
+        if (wanted.Count == 0) return;
+        var found = FindSecrets(buffer, length, wanted);
+        lock (_store)
+        {
+          foreach (var (fp, bytes) in found)
+          {
+            _store[fp] = bytes;
+            _wanted.Remove(fp);
+          }
         }
       }
 
