@@ -143,9 +143,14 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     private const int SimCap = 18000;
     // A small step back while playing (the sound's sync nudging the clock) is held, not recomputed.
     private const int HoldSteps = 12;
-    // The sea swell: a step of 0.02 s from the section's start, at most the last 1500 (30 s, as the page's warm-up).
-    private const double SwellStepSeconds = 0.02;
-    private const int SwellCap = 1500;
+    // The sea swell: a step of 1/60 s (the game's frame at 60 fps) from the section's start, at most the last 1800
+    // (30 s). The game's clock, which drives the rows' push, goes on by the frame's whole milliseconds only
+    // (FUN_008d0cc0: clock += (int)(frame s × 1000)), so at 60 fps by 16 ms a step of 16.67: the push runs at 96 % of
+    // the swell's own time, nearer its resonance (about 1.3 rad/s against the push's 1.57), and the swell is some 19 %
+    // stronger than with the clock in step (#148).
+    private const double SwellStepSeconds = 1.0 / 60;
+    private const double SwellClockStepMs = 16;
+    private const int SwellCap = 1800;
 
     // The sea swell (0xADBA40, 0xADB770): 100 x 100 points 2 m apart, a 200 m window.
     private const int SwellSize = 100;
@@ -162,6 +167,16 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     private const int NoiseSeed = 0x5EA1;
     private const ulong WarmSeed = 0x5EA2;
     private const ulong SwellSeed = 0x5EA3;
+
+    /// <summary>
+    /// GTA IV (PC): the game clock's milliseconds at the section's start. The swell's rows are pushed by
+    /// sin(y × 0.15 + 2π (ms % 4000) / 4000) (0xADBA40) with the game's own clock, which a cutscene's files don't give:
+    /// 0 by default, so the swell's phase is the session's chance. The visual tests set the phase measured from the
+    /// reference's trace (cutgen SWELLCLOCK / SWELLCLOCKS, #148). A change makes the swell anew.
+    /// </summary>
+    public static double SwellClockMs { get; set; }
+
+    private double _swellClockUsed;
     private const ulong PlaySeed = 0x5EA4;
 
     // A counter-based random number (SplitMix64 of the seed and the step's index): the same for a step however it is
@@ -335,7 +350,7 @@ float3 SkyLight(float3 dir)
   float c = dot(dir, sunDir);
   float a = saturate(saturate(1 - w.Hdr.z) * (12.58 * c - 11.6163721));
   float b = saturate(0.9375 - 0.0625 * c);
-  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + sunDir.z) + saturate(0.5 * c - 0.0625)) * 0.5) * 4;
+  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + abs(sunDir.z)) + saturate(0.5 * c + 0.5)) * 0.5) * 4;
   float3 sunLight = sun * w.SkySunColor.rgb;
   float3 sunLight2 = sunLight * sunLight;
   float3 glow = (sunLight + sunLight2 * sunLight2) * w.Hdr.y + saturate(saturate(1 - sun) * w.Hdr.y * skyV);
@@ -1435,7 +1450,7 @@ float4 PSWater(VsOut i) : SV_Target
       int x0 = EvenDown(centre.X), y0 = EvenDown(centre.Y);
       int m = (int)Math.Floor(Math.Max(seconds, 0) / SwellStepSeconds + 1e-6), s = Math.Max(0, m - SwellCap);
       bool moved = _swellStarted && (x0 != _swellX0 || y0 != _swellY0);
-      bool jumped = !_swellStarted || Math.Abs(x0 - _swellX0) > 200 || Math.Abs(y0 - _swellY0) > 200;
+      bool jumped = !_swellStarted || Math.Abs(x0 - _swellX0) > 200 || Math.Abs(y0 - _swellY0) > 200 || _swellClockUsed != SwellClockMs;
       if (_swellM == m && !moved && !jumped)
       {
         return;
@@ -1455,6 +1470,7 @@ float4 PSWater(VsOut i) : SV_Target
         Array.Clear(_height);
         Array.Clear(_speed);
         _swellStarted = true;
+        _swellClockUsed = SwellClockMs;
         _swellX0 = x0;
         _swellY0 = y0;
         from = s;
@@ -1491,7 +1507,7 @@ float4 PSWater(VsOut i) : SV_Target
       int to = (int)Math.Min(m, (long)from + budget);
       for (int j = from; j < to; j++)
       {
-        Advance((float)SwellStepSeconds, (j + 1) * 20.0, kick, swell, j);
+        Advance((float)SwellStepSeconds, (j + 1) * SwellClockStepMs + SwellClockMs, kick, swell, j);
       }
       _swellM = to;
     }

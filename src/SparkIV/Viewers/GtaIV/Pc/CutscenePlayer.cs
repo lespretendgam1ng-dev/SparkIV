@@ -298,6 +298,9 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       public CutsceneLights? Lights;
       // The farthest of its objects across the ground (CutsceneSunShadow.LocationReach: the page's hazeReach).
       public float Reach = float.PositiveInfinity;
+      // GTA IV (PC): its map particle effects (#118) and their textures' numbers on the GPU.
+      public CutsceneParticles? Particles;
+      public Dictionary<string, int> ParticleTextures = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     }
 
     // The section's draw distances by its frames (CutFile.DrawDistanceSteps; the page's drawSteps).
@@ -588,6 +591,8 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
         // The coronas' sprite and the light volumes' lookup (the same for every location): made here, once.
         int corona = !_coronaSpriteSet && location.Corona != null ? renderer.PrepareTexture(location.Corona) : 0;
         int volume = !_volumeLookupSet && location.LightVolume != null ? renderer.PrepareTexture(location.LightVolume) : 0;
+        // The particle effects' textures (#118).
+        var particleTextures = location.Effects?.Textures.ToDictionary(t => t.Key, t => renderer.PrepareTexture(t.Value), StringComparer.OrdinalIgnoreCase);
         return () =>
         {
           // Dropped (or another load for the key) meanwhile: not wanted any more.
@@ -601,6 +606,11 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           group.Instances = objects.Select(o => renderer.AddInstance(numbers[o.Model], o.Place, inRoom: o.Room >= 0, castsSunShadow: o.FloatAt == null,
                                                                      mirrored: o.Far, mainView: !o.MirrorOnly)).ToArray();
           group.Lights = lamps;
+          if (location.Effects is CutsceneParticles effects && effects.Count > 0 && particleTextures != null)
+          {
+            group.Particles = effects;
+            group.ParticleTextures = particleTextures;
+          }
           // The coronas' sprite (coronas.wtd's, the same for every location): once.
           if (corona != 0)
           {
@@ -966,6 +976,7 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           FarClip = _far,
           FocusNear = dof?.Near ?? 0,
           FocusFar = dof?.Far ?? 0,
+          DofReach = CutsceneCamera.DofReach,
           Fade = _fade.At(frame),
         };
       }
@@ -1024,9 +1035,20 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           stage = GpuProfiler.Now;
         }
         // The lamps' coronas (the page's coronasNow), x the time cycle's SprBght outside a room.
-        coronas = lamps.CoronasNow(eyeAt, viewProjection, _lighting.Hour, _lighting.CycleAt(eyeAt, viewProjection).SpriteBrightness);
+        float spriteBrightness = _lighting.CycleAt(eyeAt, viewProjection).SpriteBrightness;
+        coronas = lamps.CoronasNow(eyeAt, viewProjection, _lighting.Hour, spriteBrightness);
+        // GTA IV (PC): the traffic lights' coronas by their state, the game clock taken as the section's time (the
+        // game's own clock at the cutscene's start isn't known).
+        coronas.AddRange(lamps.TrafficCoronas(eyeAt, viewForward, spriteBrightness, _time * 1000));
         volumes = lamps.VolumesNow(eyeAt, viewProjection, _lighting.Hour, _volumeLookupSet);
         profiler?.CpuSince("  update: coronas + volumes lists", stage);
+      }
+      // GTA IV (PC): the shown location's map particle effects at the section's time (#118).
+      List<ParticleBatch>? particles = null;
+      if (_lighting != null && _visibleLocation != null && _locations.TryGetValue(_visibleLocation, out var withParticles) && withParticles.Particles != null)
+      {
+        particles = withParticles.Particles.At(_time, eyeAt, withParticles.ParticleTextures);
+        profiler?.CpuSince("  update: particles", stage);
       }
       // The mirrored surroundings' map wherever the game's light is (outside), its objects as far as the haze.
       float? parabolicHaze = null;
@@ -1037,7 +1059,7 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
       return new SceneView(viewProjection, eyeAt, light, tone, _playing)
       {
-        Lights = lights, Coronas = coronas, Volumes = volumes, Post = post, ParabolicHaze = parabolicHaze, OverlayLines = cameraLines,
+        Lights = lights, Coronas = coronas, Volumes = volumes, Particles = particles, Post = post, ParabolicHaze = parabolicHaze, OverlayLines = cameraLines,
         // Without the location the view's own background (the page's: the dropdown's choice; with it the sky or black).
         Background = _visibleLocation == null ? _background : null,
       };

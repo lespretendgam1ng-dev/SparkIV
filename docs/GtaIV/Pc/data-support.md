@@ -28,6 +28,7 @@ Detailed descriptions of individual formats with all findings are under [formats
 - [ide-mlo.md](formats/ide-mlo.md): interiors, rooms, portals
 - [timecyclemodifiers.md](formats/timecyclemodifiers.md): modifier columns, AmbientDownMult, GlobEnvRefl
 - [2dfx-lights.md](formats/2dfx-lights.md): lights in models, shadow lamps, lights for forward-drawn objects
+- [wpfl.md](formats/wpfl.md): particle effects (the libraries, the map's 2dfx particle entries, the plumes; #118)
 - [drawable.md](formats/drawable.md): the vertex buffer's layout in `.wdr` / `.wdd` / `.wft`; older patches' files
   (1.1.2.0) leave `pLockedData` null
 - [deferred_lighting.md](formats/deferred_lighting.md): lighting shaders, stencil, frame sequence
@@ -62,7 +63,7 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
 | `[CUTSCENE_HEADER]` | **unclear** | bc_3: `44 1143 2578 3615`, the section boundaries in an overall frame count starting at 44. Possibly an offset for sound or subtitles (44 frames ≈ 1.5 s). The synchronisation in SparkIV still has to be checked. |
 | `[ANIMRANGE]` | **unclear** | `range on 44.0 3615.0`; matches `[CUTSCENE_HEADER]`. |
 | `[COMPRESSION]` | **unclear** | `1 A` everywhere. |
-| Particle effects of the world (smoke, steam: the map's 2dfx particle effects or the scripts', drawn by the game as quads written each frame) | **not drawn** | E.g. two smoke plumes over the toll booths in TLAD et01_ba (`GTAIV.2.trace`, calls 224301524 / 224301543): the grey patch in the sky of f1394.75 (#82). Where they come from (2dfx entry or script) not checked. |
+| Particle effects of the world (smoke, steam: the map's 2dfx particle effects or the scripts', drawn by the game as quads written each frame) | **not drawn** | E.g. two smoke plumes over the toll booths in TLAD et01_ba (`GTAIV.2.trace`, calls 224301524 / 224301543): the grey patch in the sky of f1394.75 (#82), also the orange "light square" behind the window (#144: the first plume turns the sky's HDR 7.1/9.4/11.7 into a neutral 6.2 at 900,320; the game's post constants c81-c85 equal SparkIV's, its ColorShift is 0, so the orange is ColorCorrect on that grey). Where they come from (2dfx entry or script) not checked. |
 | `[EFFECTS]` | **ignored** | Particle effects, e.g. `FX_blood_gun_entry:effect2_1 5 1205 71900 71900 <6 numbers> 0`: effect name, clip, numbers for object, bone, time, position and rotation (assumption). The associated `effect` clips have only a `LightDirection` track. |
 | `[CAMCORDER]` | **ignored** | Time spans (ms) in 134 files, presumably the handheld-camera look. |
 | `[BLOCKING_BOUNDS]` | game logic only (assumption) | Four corner points and a radius, probably the blocked area. |
@@ -175,6 +176,17 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
 - **Sky colour:** SkyColor + azimuth colour (columns 64–72, 77, 78) and sunshine (103–105, 119).
   - HDRExposure = SkyLightMult (column 60) × 2.85 (0xDBC049), clamped to 30. After that everything is tone-mapped like the rest.
 - **Cloud noise:** The shader `rage_perlinnoise` (0x23C2D220) recomputes it every frame into a 256² texture. The basis is `baseperlinnoise3channel` from `pc\textures\skydome.wtd`, 6 octaves.
+  - #145 (2026-11-21, `GTAIV.1.trace` bc_3 s3, pass at call 182003640, PS 0x2cbb17e0): its program is SparkIV's
+    `PSPerlin` instruction for instruction; it reads the base noise **trilinearly without anisotropy** (MIN/MAG/MIP
+    LINEAR, wrap), while the sky draw's own samplers are anisotropic. SparkIV used the anisotropic one for both; now the
+    pass has its own (bc_3 s3 f829.50's sky 3.98 -> 3.65; with the game's own noise texture put in, 2.30).
+  - The phase matters to a few hundredths: ±0.05 changes that sky by 0.2-0.6 levels. In `GTAIV.1.trace` the game's
+    phase follows its clock (gDayNightEffects): from s1 f292.5 to f984.25 the clock went on 0.187 h, the phase
+    1.493 = 0.187 × CloudSpeed 8; SparkIV's phase from the playing time (23.06 s -> 0.192 h) went 1.537, 3 % more - the
+    traced game's clock ran slower than real time. For the app SparkIV's way stays; the visual tests give each bc_3
+    reference a `CLOUDPHASE` such that its phase is the game's (measured at s1 f292.5, s2 f1055.5, s3 f829.5 from the
+    last perlin pass before the snapshot, carried to the other references by their measured hours; bc_3 s2 f1307
+    -0.24, s3 f829.50 -0.22). TLAD's et01_ba s1 f706.75 was within 0.002 already.
   - The fine structure comes from `noise16_p`, not from `detailbump2`. In the capture the textures are two levels smaller; this is due to the texture quality.
   - Tried and taken back (2026-10-27/28): the textures from their third level, as in the trace. in `GTAIV.1` the noise draw 74260495's Noise1Sampler is 32 × 32, byte for byte the third level of the 128 × 128 `baseperlinnoise3channel`; the sky draw 74265456's HighDetailNoiseSampler is 64 × 64, the third level of the 256 × 256 detail texture (within DXT rounding). From the full texture the noise's spread was 0.20, the game's 0.11 (now 0.110). With twice the contrast fewer places passed the threshold: blue sky where the game's lies overcast, and the water mirroring it too blue. Visual run: bc_3 sum −5.46 (s3 f828.25 −1.96, s2 f1307 −1.23, s2 f1055.25 −0.35, s1 f854.75 −0.35); worse s3 f357.5 +0.09, f137.5 +0.05; TLAD unchanged. Taken back: the reference videos were recorded with HQ textures (the user, 2026-10-28), so there the game samples the full noise; the better match came from more cloud cover by chance. The videos' cloud cover is chance as far as known: bc_3's weather is SUNNY (bernie3: `FORCE_WEATHER_NOW(1)`), and where the clouds lie comes from the phase, which grows with all the game time played in the save (`GTAIV.1`: 4501.13; SparkIV starts from TLAD's trace's 593.25), so no video's can be known.
 - **Cloud columns** (matched in both captures):
@@ -185,7 +197,13 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
 - **Movement:** The phase grows per game hour by column 107 (parser 0xAEFEB0 -> +0x1B4, 0x62E110).
 - **Cloud cover and sun glow** (#5, checked on GTA IV's trace `GTAIV.1`, sky draw 74963380, PS 0x246411a0 = program 8 of `common\shaders\win32_30\gta_atmoscatt_clouds.fxc`, instruction for instruction):
   - Cover = amount^thickness × saturate(amount × EdgeSmooth). GTAIV.exe 0x615D98 sets EdgeSmooth = 1 / column 89 (the sky's +0x184, next to the detail's scale, strength and the thickness at +0x188 to +0x190). The traces agree: 1 in GTA IV's `GTAIV.1`/`.2` (column 89 = 1), infinite in TLAD's `GTAIV.3`/`.4` (column 89 = 0, so the factor is 1 there). The cover drives the light on the clouds, their inscattering, the fade of the upper clouds and the total.
-  - The sun's glow adds saturate(0.5 cos − 0.0625) × SunSize (cos to the sun), not saturate(0.5 + 0.5 cos).
+  - The sun's glow (#153, re-read 2026-11-21 from programs 1, 5 and 8 of the .fxc, `mov r1.yz, c2.xxyw` +
+    `mad_sat r1.xyz, r3.xyyw, c2.zwyw, r1`): glow = saturate((a^32 − b³ × saturate(0.6 + SunDirection.w) +
+    saturate(0.5 + 0.5 cos) × SunSize) × 0.5) × 4, with a = saturate(saturate(1 − HDRSunExposure.y) × (12.58 cos −
+    11.6163721)), b = saturate(0.9375 − 0.0625 cos), cos to the sun. SunDirection.w is the sun's height without its
+    sign: 0.9226 with the height 0.9226 by day (GTAIV.1, call 74913811), 0.1833 with the sun 0.1833 below the horizon
+    at dawn (GTAIV.3, call 160410309). An earlier reading here (saturate(0.5 cos − 0.0625), the signed height) was
+    wrong; by day the two differ only within about 60° of the sun, at dawn the old one left out most of the glow.
   - Recomputed per pixel with the trace's own constants and noise textures: before, clouds came out up to 40 % too bright and reddish (measured 7.7 / 7.9 / 7.8, computed 10.4 / 9.4 / 8.7); after, the mean is within 4 % of the game.
   - The trace's sky is SUNNY at 10:39 (all 11 time cycle values within 0.0001), not 12:00. The references' 12:00 for bc_3 is not confirmed.
 - **Clock in a trace:** every frame sets gDayNightEffects (VS/PS c45) = seconds of the day / 43200, rising until noon and falling after it. Rising or falling over the neighbouring frames gives morning or afternoon. The traces: `GTAIV.1` 10:11–10:57, `GTAIV.2` 08:51–10:17, `GTAIV.3` 11:54–13:20, `GTAIV.4` 11:54–13:07. The clock runs on through the cutscenes; they don't set it.
@@ -208,6 +226,15 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
 - **The pass:** GTA IV's PS 0x23e5e6a0 (`GTAIV.1`, call 74970168), TLAD's 0x25819460 with the film grain (`GTAIV.3`, call 120953415). It does the depth of field, the motion blur and the tone mapping in one, into the backbuffer.
 - **Checked:** recomputed per pixel from the pass's inputs (state dumps right before it) against the backbuffer right after it. `GTAIV.1` (bc_3, outside): 99.8 % of the pixels within one step. `GTAIV.3` frame 13868 (et01_aa, DOF near 5.9 m, far 7.5 m): 100 % within two steps in every depth band, the mean difference 0.25 (rounding).
 - **Depth of field:** b = min(1, max(near − z, z − far, 0) / 0.5)², near and far from dofDist (see `CameraDof`), the distance z from the depth with dofProj (near clip 0.05). The near side blurs too. Without it, the pixels nearer than 2 m in `GTAIV.3` miss (mean 0.53 instead of 0.25).
+- **A negative far, and how far the depth reaches** (#138, 2026-11-10, `GTAIV.3` intro s2 f352.75, the pass PS
+  0x2d2e61e0 at call 19415645):
+  - The track gives (1, −1600) there; the pass gets dofDist (c78) = (0.5, 1599, 0.5, 800.5): the far is taken by its
+    size, sharp from 1 to 1600 m. SparkIV took −1600 as it is, so everything beyond 1 m was blurred.
+  - z comes from dofProj (c77) = (0.05, 1500, …), the game camera's own clip planes, so z is never beyond 1500 m: with
+    a far of 1600 m nothing far is blurred, not even the sky. SparkIV read the depth through its own far plane (7 km)
+    and blurred the sky and the skyline's outlines beyond 1600 m.
+  - In SparkIV: `CutsceneCamera.DofAt` (|far|), `CutsceneCamera.DofReach` = 1500 (`PostParams.DofReach`, z held at it
+    in `ToneMapper`'s composite). intro s2 f352.75 2.56 → 2.25. Status: **used**.
 - **The G-buffer's softening:** where GB2.w ≠ 0 the point first goes halfway to the filtered read at (−1.5, 0.5) texels.
   - The pass picks one of the four reads by GB2.w × 256 in (0, 2], (2, 4], (4, 8], (8, 256]. GB2 is A2R10G10B10, so a set GB2.w always picks the last.
   - The G-buffer is cleared to 0 (`GTAIV.1` call 74953082), and every program that fills it writes its alpha there: gta_default and gta_normal_spec alpha × globalScalars.x (kept only from 0.176, so at least 1/3), gta_ped 1. So it applies to everything drawn, not to the sky.
@@ -252,6 +279,43 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
     - Measured (HDR, the water's box in f140): the game before its tone mapping 4.067 / 4.371 / 4.633; SparkIV before 3.822 / 4.206 / 4.540 (without the depth effect), now 3.948 / 4.343 / 4.686.
     - In SparkIV: `waterColor` × `sky.skyLight`, `depthFx` in `gameFog` (`gtaiv-pc.js`). Visual run: bc_3 s3 f357 −0.98, f140 −0.92, s1 f984 −0.80, f79 −0.78; worse at most +0.03.
     - The near water in s3 f357.25 (HDR, before the tone mapping): the game 3.39 / 3.49 / 3.54, SparkIV 2.97 / 3.01 / 3.00. The water is deep there (alpha about 1) and the mirror's content matches; without the swell SparkIV comes to 3.22 / 3.31 / 3.34. The game's swell there (its 289 water quads' vertices, 36 bytes: place, normal, colour; the window's quarter drawn, world 487–587 / −598–−497, 1776 points): heights' spread 0.157 m; SparkIV's over the same points 0.167 m. In bands along y both show the long swell's rows (42 m), shifted against each other: the game's calm row lies at the camera (0.098 m within 10 m), SparkIV's not (0.146 m). That phase comes from the game's clock (ms % 4000, GTAIV.exe 0xADBA40), the session's chance, so it is left as it is. The window is placed as SparkIV's (centred on the marker, 0xADBA40 / 0xAD5560); water.dat has no calming quads (flag 8, 0xAD4190) near bc_3.
+- **The swell's phase decides the near water's brightness** (#148, 2026-11-09, `GTAIV.1` bc_3 s3 f357.25, frame
+  164528008–164538675, water PS 0x2dbbdd80 from call 164536354):
+  - SparkIV's open water was up to 24 % brighter in HDR than the game's (1300–1550 / 150–400: game 3.48 / 3.76 / 3.97
+    after the water, SparkIV 4.44 / 4.86 / 5.21 in the game's units). The mirror's content is the same (the
+    ReflectTexture there 7.65 / 8.61 / 9.36, SparkIV's 7.63 / 8.56 / 9.30 before `waterReflectionScale`, c74 = 1.428),
+    and the sun (c18 = (0.996, 0.882, 0.769) × 11.925) and the water's colour (c72, c73) are SparkIV's.
+  - The game's pixel recomputed from its own inputs (the wave texture s0, the mirror s1, the draw's constants, the
+    swell grid's vertex normals from the draws' vertex buffers) gives its result: beyond 50 m (no swell) exactly
+    (4.358 against 4.363), within 50 m to 1.5–6 %. Without the swell's normals it would be 7–20 % brighter there: the
+    swell (v1.xy × near / v1.z added to both normals) tilts the water and lowers the Fresnel.
+  - The swell's mean slope along y lay the other way round in SparkIV in all regions (game +0.051 / +0.059 / −0.116,
+    SparkIV −0.059 / −0.071 / +0.130): the rows' push sin(y × 0.15 + 2π (ms % 4000) / 4000) (0xADBA40) runs on the
+    game's own clock, SparkIV's on the section's time from 0. The game's clock is the session's, so in the app the
+    phase stays chance; in the visual tests each reference gets the clock measured from its trace (`SWELLCLOCK`,
+    the game clock's ms at the section's start modulo 4000, like `CLOUDPHASE`). Measured by fitting: SparkIV's mean
+    slopes per screen region at the clocks 0 / 1000 / 2000 / 3000 (linear in the push: m0 + a cos θ + b sin θ) against
+    the game's from its grid. The clock is not one per section: within s2 it drifts (f436.75 500 ms, f786.00 3450 ms;
+    the traced game ran at 16–23 ms a frame, its clock not in step with the cutscene's time).
+  - In SparkIV: `CutsceneWater.SwellClockMs` (cutgen `SWELLCLOCK`, `SWELLCLOCKS` = ms@frame from lauf.ps1); a changed
+    clock makes the swell anew. Status: **used** (tests only; the app keeps 0).
+- **The swell's strength: the game clock counts whole milliseconds** (#148, 2026-11-22, GTAIV.exe):
+  - Every constant of the swell's step (0xADBA40, filled at 0xADB770) is SparkIV's: dt at most 0.13 (0xE85F70), pull 40,
+    rest 0.5, damping 0.7 per second, neighbours 0.17 / 0.08, 0.2 × 100² kicks of (0.7 wind + 0.23) × 10 × 0.5 × dt,
+    the rows' push sin(y × 0.15 + 2π (ms % 4000) / 4000) × (0.55 wind + 0.18) × dt (wind 0x12DDEB4 = 0 here).
+  - But the clock (0x1173608 = 0x11735B4) goes on by `(int)(frame seconds × 1000)` each frame (FUN_008d0cc0), while the
+    step takes the frame's full time: at 60 fps 16 ms of push phase per 16.67 ms of swell time, so the push runs at
+    96 % of its 1.571 rad/s. The swell's rows answer like a damped spring with about 1.30 rad/s of their own (k 0.3
+    per 2 m cell: 40 × (1 − 0.34 − 0.66 cos 0.3) + 0.5 = 1.68 = ω²; damping 0.357/s), so the push lies just above
+    their resonance and 4 % less frequency gives a stronger swell: settled height spread 0.134 m → 0.160 m (offline,
+    the game's grid in bc_3 s3 0.160).
+  - SparkIV now steps the swell by 1/60 s with the clock +16 ms a step (the game at 60 fps; at most the last 1800
+    steps, 30 s). The visual tests' clocks are measured anew for all 15 bc_3 references from the game's grids
+    (`GTAIV.1.trace`, the water draws' vertex normals): SparkIV's swell recomputed exactly for every clock 0–3984 ms
+    and its slopes (height 2 m before − after) fitted to the game's normals. The 60 fps model fits every reference
+    better than the old one (correlation s1 f984 0.870 → 0.907, s2 f1055 0.841 → 0.875, s3 f975 0.872 → 0.900, …).
+    A swell running before the cutscene (or on across sections) fits worse: the game's starts flat as SparkIV's.
+    Early in a section (bc_3 s1 f78.75, 2.6 s) the random kicks still outweigh the push (correlation 0.66).
 - **The near water's swell** (#13, 2026-10-28):
   - Recomputed per pixel with the trace's own inputs (depth s2, waves s0, mirror s1 at the first water draw 74265526), the near water came out 10–16 % brighter than the game's in a band 9–13 m off. The water's grid round the camera (the CPU swell, 2 m apart) passes its vertex normals into the slopes (r3 += v1.xy × near / v1.z). With them, read from the draws' vertex buffers, the band is gone and the game lies an even ~10 % above the mirror's term (its sun and glint).
   - The vertex normal is ≈ 0.95–0.98 × (height 2 m before − height 2 m after) (fitted on 1782 points, r 0.97–0.98), as SparkIV takes it. The game's grid has settled: heights' spread 0.10 m, normals 0.024 across and 0.065 along y.
@@ -277,6 +341,13 @@ openFormats export (`.onim`) of all 357 cutscene dictionaries.
   - Cut half a metre under the water, as the game's clip plane (set at 74262927: in the world z ≥ −0.515 with the water at 0). What stands just under the water shows in the mirror too: the pier's dark lower edge in the corner at f79 (game 1.15, SparkIV now 0.32, before sky at 7.3).
   - **The mirror's specks** (the user's observation, 2026-10-28): the game reads its wave texture with this one level only (the water draw's SurfaceTextureSampler, 1024 × 1024, no smaller levels, MINFILTER LINEAR). Far off, each pixel takes the slope at its own point, so the mirror breaks up into specks. SparkIV made mipmaps of it and read them averaged, so its mirror stayed smooth in the app. Visual run (water references): sum −0.14; at f79 the rocks' and the pier's mirror now breaks up into specks as the game's, a little fainter and less spread.
   - Lit as the game's pixel shader for the ReflectTexture (0x1A3F8A40): the texture × (the light from around × AO + the sun × saturate((n.l − 0.25) × 4/3)), the far fog over it; no shadow, no shine, no lamps. The same as for the map of the surroundings; the constants (c18, c37, c38, c45) are SparkIV's.
+  - **The mirror's fog goes by the view depth** (#148, 2026-11-10; `GTAIV.1` bc_3 s2 f786, the ReflectTexture pass PS
+    0x22f07c60, 405 draws from call 136280082 into 0x2c7e50c0): lerp(lit, `globalFogColor`, saturate((w −
+    `globalFogParams`.x) / (.y − .x))) with w the mirrored camera's clip w (its vertex program's o2.w), not the distance.
+    SparkIV took the distance, larger towards the picture's sides, so its mirrored quay was hazier: in s2 f786
+    (x 0–300, rows 540–660) 5–12 % brighter than the game's ReflectTexture; by the depth within 1–5 %. Its AO is
+    1 + `globalScalars2`.z × ((`gDayNightEffects`.x × red + .y × green) × `globalScalars`.z − 1) (vertex program); SparkIV
+    keeps the colours' AO alone there (not changed). The map of the surroundings keeps the distance (no view depth).
   - Only front faces (CULLMODE CW for all its draws, 74262957–74263295): from below SparkIV showed the sunlit tops of the far ground and of the pier.
   - Visual run (bc_3, against the mirror of the near models): s3 f357.5 −0.36, s2 f786.75 −0.12, s1 f984 −0.09; worse s2 f437 +0.11, s1 f586.75 +0.06; sum −0.48. TLAD et01_ba (the map of the surroundings) +0.01 to +0.05.
   - Open: at f79 the game's mirror has a dark underside of the pier in its corner (1.2), SparkIV's sky there; the shore's far version behind the bridge stays in SparkIV's mirror, in the game's it is gone in the fog.

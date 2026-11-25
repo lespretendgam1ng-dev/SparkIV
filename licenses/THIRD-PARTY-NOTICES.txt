@@ -8,6 +8,9 @@ licenses. The license texts of the components marked [file] are in the files nam
 - SharpZipLib (MIT), https://github.com/icsharpcode/SharpZipLib
 - Ookii.Dialogs.WinForms (BSD-3-Clause), https://github.com/ookii-dialogs/ookii-dialogs-winforms
 - Velopack (MIT), https://github.com/velopack/velopack
+- BCnEncoder.Net (MIT OR Unlicense; used under the Unlicense), https://github.com/Nominom/BCnEncoder.NET
+- Concentus (BSD-3-Clause, the Opus license), https://github.com/lostromb/concentus
+  [file] Concentus-LICENSE.txt
 - Vortice.Windows (MIT), https://github.com/amerkoleci/Vortice.Windows
 - SharpGen.Runtime (MIT), https://github.com/SharpGenTools/SharpGenTools
 - DirectX Shader Compiler (Microsoft Software License Terms; LLVM Release License; MIT),

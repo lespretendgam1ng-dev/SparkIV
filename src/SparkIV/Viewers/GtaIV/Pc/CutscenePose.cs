@@ -157,7 +157,10 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
       for (int b = 0; b < n; b++)
       {
-        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || !tracked.Contains(b)))
+        // The game turns the forearm twist and the upper arm roll by its rule even where the clip has a track for them
+        // (#141: Elizabeta's clip in et01_aa turns L_/R_UpperArmRoll 21 / 13 degrees off the game's; with the rule
+        // within 0.04, GTAIV.2.trace s2 f79.5, palette at call 71241894).
+        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || kind == "upperArmRoll" || !tracked.Contains(b)))
         {
           _helpers.Add((b, kind, a, c));
         }
@@ -268,6 +271,14 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
               break;
           }
           rotation[bone] = Quaternion.Normalize(q);
+          // An arm roll and the neck roll also sit where their leader (the upper arm, the head; same parent) is, not at
+          // their own rest place (#129, GTAIV.trace bc_1 s2 f715.5, Bernie's palette at call 120034252: at their rest
+          // places L_ArmRoll and R_ArmRoll were 6.2 mm off the game's = the upper arm's 0.1663 against their 0.1601 along
+          // the clavicle, Neck_Roll 79.5 mm = the head's 0.0795 from the neck against its 0; their turns within 0.07°).
+          if ((kind == "armRoll" || kind == "neckRoll") && a >= 0 && _parent[a] == _parent[bone])
+          {
+            position[bone] = position[a];
+          }
         }
       }
 

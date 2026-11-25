@@ -249,13 +249,13 @@ namespace SparkIV.WinUI.Rendering.D3D12
   /// <summary>
   /// The post effects of a frame besides the tone mapping (#112 step 4h): the depth of field (sharp between
   /// <see cref="FocusNear"/> and <see cref="FocusFar"/>, metres from the camera, fully blurred half a metre nearer or
-  /// beyond; the depth read through the projection's <see cref="NearClip"/> and <see cref="FarClip"/>) and a fade to
-  /// black (0 none, 1 black).
+  /// beyond; the depth read through the projection's <see cref="NearClip"/> and <see cref="FarClip"/>, held at
+  /// <see cref="DofReach"/> when it is above 0) and a fade to black (0 none, 1 black).
   /// </summary>
   public struct PostParams
   {
     public bool DepthOfField;
-    public float NearClip, FarClip, FocusNear, FocusFar;
+    public float NearClip, FarClip, FocusNear, FocusFar, DofReach;
     public float Fade;
 
     public static PostParams None => default;

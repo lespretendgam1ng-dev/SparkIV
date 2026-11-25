@@ -260,8 +260,12 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       Fog = true,
       DepthFx = c.DepthFx,
       FogNear = (c.NearFogColor ?? c.SkyBottom * c.SkyLightMultiplier) * c.Exposure,
-      FogFar = (c.SkyColor == Vector3.Zero ? c.NearFogColor ?? c.SkyBottom * c.SkyLightMultiplier
-                                           : (c.SkyColor + c.AzimuthStrength * c.AzimuthColor) * c.SkyLightMultiplier) * c.Exposure,
+      // GTA IV (PC): the far colour eased towards the near one by NearFogAmount (#138). GTAIV.3.trace intro: c43 (near)
+      // (0.594, 1.793, 2.810), the sky's far colour (1.773, 2.028, 2.360); with c41.w = 0.3137 (s2 on, call 6904871)
+      // c42 = (1.403, 1.954, 2.501), with 1/255 (call 4767124) (1.768, 2.027, 2.362) - both lerp(far, near, c41.w).
+      FogFar = Vector3.Lerp(c.SkyColor == Vector3.Zero ? c.NearFogColor ?? c.SkyBottom * c.SkyLightMultiplier
+                                                        : (c.SkyColor + c.AzimuthStrength * c.AzimuthColor) * c.SkyLightMultiplier,
+                            c.NearFogColor ?? c.SkyBottom * c.SkyLightMultiplier, Math.Clamp(c.NearFogAmount, 0, 1)) * c.Exposure,
       FogStart = c.FogStart,
       FogEnd = Math.Max(c.FarClip, c.FogStart + 1),
       FogNearAmount = c.NearFogAmount,

@@ -207,6 +207,8 @@ static const uint FNormal = 1, FSpec = 2, FSpecFlat = 4, FEnv = 8, FEnvSpec = 16
   FTextured = 16384, FFixedAlpha = 32768, FForwardLit = 65536, FRawAo = 131072, FGlowOver = 262144;
 
 // The stipple's share kept per level (stipple.wtd all_stips: of 64) and a vehicle lamp's dimmers (by its vertex alpha).
+// Hair (#135): how squarely it must face the camera for its soft edge (|n.v|; the outline keeps the hard cut).
+static const float HAIRFACE = 0.75;
 static const float Kept[16] = { 0, 6, 8, 12, 11, 12, 16, 24, 32, 40, 48, 52, 52, 56, 58, 64 };
 static const float Dimmers[15] = { 10, 10, 10, 9, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 
@@ -553,9 +555,16 @@ PsOut Shade(VsOut input, bool deferred, bool solid = false)
     albedo = vc;
   }
   // Cut out: the page's test (texture alpha x vertex alpha at most 45/255 goes; a tree by half, for its stipple).
-  if (d.Material.x > 0.5)
+  // GTA IV (PC) hair (#135, MeshRenderer's HairSoft): Material.x 1 + t: solid from t where it faces the camera
+  // (|n.v| > HAIRFACE), else from 45/255; Material.x 0.5 + 0.4 t: its blended pass, only where it faces the camera.
+  float hairFacing = abs(dot(normalize(input.normal + 1e-6), normalize(f.Eye.xyz - input.world)));
+  if (d.Material.x > 0.5 && d.Material.x < 1)
   {
-    clip(alpha - (tree ? 0.5 : 0.17648));
+    clip(hairFacing - HAIRFACE);
+  }
+  else if (d.Material.x > 0.5)
+  {
+    clip(alpha - (tree ? 0.5 : d.Material.x > 1.0001 && hairFacing > HAIRFACE ? d.Material.x - 1 : 0.17648));
   }
   // The normal: peds and vehicles turned to the camera (seen from inside: the side facing it), then bent by the
   // normal map: with tangents the tangent frame (and, written to the G-buffer, rounded as the game stores it);
@@ -766,6 +775,11 @@ PsOut Shade(VsOut input, bool deferred, bool solid = false)
   else if (textureAlpha)
   {
     a = (bits & FVehLights) != 0 ? baseA : alpha;
+    // Hair's blended pass (Material.x = 0.5 + 0.4 t, #135): alpha / t, full where its solid pass starts.
+    if (d.Material.x > 0.5 && d.Material.x < 1)
+    {
+      a = saturate(a / ((d.Material.x - 0.5) / 0.4));
+    }
     // (Not the map's forward see-through materials (#142): the game draws them with its alpha test ALWAYS, writing
     // depth even where the texture is clear, so what lies behind in the same mesh, drawn later, stays hidden.)
     if (a < 0.01 && (bits & FForwardLit) == 0)
@@ -952,6 +966,77 @@ float4 PSCorona(CoronaOut input) : SV_Target
   return float4(Tex[(uint)d.Part.x].Sample(Linear, input.uv).rgb * input.tint, 0);
 }
 
+// A particle sprite (#118; GTA IV's gta_rmptfx_litsprite, GTAIV.3.trace draw 34241242: VS 0x2d30d4a0, PS 0x2d006e20):
+// a quad facing the camera (its right, up, forward in d.World's rows 0-2), turned by the particle's angle, its corners
+// pulled in within d.Material.y metres beyond d.Material.x of the camera (gScaleFade, the near plane). Lit per corner as
+// the game's: the corner's direction in the view plane against the sun (seen from the view) clamped to
+// +-d.Instance.w, wrap (d.Instance.x scale, .y bias) x the sun's red (f.Sun.x, x exposure) x d.Instance.z (gDiffuse) x
+// the shadow share (1 + d.DirtMask.x (gUseShadows) x (the occluded share of the sun's map there - 1)); the light from around (above to below by the corner's up) x d.DirtMask.y
+// (gAmbientAmount) x max(shadow, d.DirtMask.z); the particle's colour itself added (x exposure); x d.DirtMask.w (the HDR
+// multiplier). The particle (Palette, t1): row 0 its place and half size, row 1 its colour and alpha, row 2 its angle
+// and two atlas cells (d.Tint.xy the tiles), blended half and half as the game's; alpha x d.Tint.z (gSuperAlpha).
+// Over the light, blended (SRCALPHA / INVSRCALPHA), depth tested, not written; the depth effect and the fog as the
+// scene's (the game's: o3.zw, o5).
+struct ParticleOut { float4 position : SV_Position; float2 uvA : TEXCOORD0; float2 uvB : TEXCOORD1; float4 color : COLOR; float3 world : WORLD; };
+
+float2 ParticleCell(uint cell, float2 corner)
+{
+  float2 tiles = max(d.Tint.xy, 1);
+  float2 at = float2(cell % (uint)tiles.x, cell / (uint)tiles.x);
+  // (The game's quads keep a texel off the cell's edges: 0.0039 to 0.496 of a 2 x 2 sheet of 256.)
+  float2 inset = 1.0 / 256;
+  return (at + lerp(inset, 1 - inset, corner * 0.5 + 0.5)) / tiles;
+}
+
+ParticleOut VSParticle(uint id : SV_VertexID)
+{
+  uint index = id / 6;
+  float2 corner = CoronaCorners[id % 6];
+  float4x4 p = Palette[index].m;
+  float3 at = p[0].xyz;
+  float halfSize = p[0].w;
+  float s, c;
+  sincos(p[2].x, s, c);
+  float2 turned = float2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
+  float3 right = d.World[0].xyz, up = d.World[1].xyz, forward = d.World[2].xyz;
+  float depth = dot(at - f.Eye.xyz, forward);
+  float fade = saturate((depth - d.Material.x) / max(d.Material.y, 1e-3));
+  float3 place = at + (right * turned.x + up * turned.y) * halfSize * fade;
+  ParticleOut o;
+  o.position = mul(float4(place, 1), f.ViewProjection);
+  o.world = place;
+  // (Flipped vertically: the texture's v runs down the quad.)
+  float2 uvCorner = float2(corner.x, -corner.y);
+  o.uvA = ParticleCell((uint)p[2].y, uvCorner);
+  o.uvB = ParticleCell((uint)p[2].z, uvCorner);
+  float3 n = normalize(float3(turned, 0) + 1e-5);
+  float3 sun = float3(dot(f.SunDirection.xyz, right), dot(f.SunDirection.xyz, up), -dot(f.SunDirection.xyz, forward));
+  float k = clamp(dot(n, sun), -d.Instance.w, d.Instance.w);
+  // The sun's shadow at the corner as the game's program reads it: its 9 taps count the map's depths nearer the sun
+  // than the corner (slt (stored - z), 0: the occluded ones), 1 + gUseShadows (d.DirtMask.x) x (that share - 1) - so a
+  // particle in the open sun gets 0.6, one in shadow 1. GTAIV.2.trace et01_ba: the plumes in the open turn the sky
+  // behind them (7.29 / 9.52 / 11.74) to 6.50 / 7.30 / 8.10, a smoke of 6.06 at alpha 0.64, as this gives (with 1:
+  // 10.4).
+  float shadow = 1 + d.DirtMask.x * ((1 - SunShadow(place)) - 1);
+  float sunTerm = max((k * d.Instance.x + d.Instance.y) * f.Sun.x * shadow * d.Instance.z, 0);
+  float3 colour = p[1].rgb;
+  float3 around = lerp(f.AmbientAbove.rgb, f.AmbientBelow.rgb, saturate(n.y * -0.5 + 0.5)) * d.DirtMask.y * colour;
+  float3 lit = around * max(shadow, d.DirtMask.z) + colour * (f.Params.y + sunTerm);
+  o.color = float4(lit * d.DirtMask.w, saturate(fade * p[1].w * d.Tint.z));
+  return o;
+}
+
+float4 PSParticle(ParticleOut input) : SV_Target
+{
+  uint slot = (uint)d.Part.x;
+  float4 t = lerp(Tex[slot].Sample(Linear, input.uvA), Tex[slot].Sample(Linear, input.uvB), 0.5);
+  float4 colour = input.color * t;
+  float distance = length(input.world - f.Eye.xyz);
+  colour.rgb = DepthEffect(colour.rgb, distance);
+  colour.rgb = lerp(colour.rgb, FogColour(distance), FogAmount(distance));
+  return colour;
+}
+
 // A lamp's visible light volume (#112; the page's gameLightVolumes, gtaiv-pc.js ~1539-1710; GTA IV's deferred_lighting
 // lightShafts, vs07 with ps18-ps21): the game's unit mesh (MeshRenderer.LightVolumeMesh) mapped round the lamp (d.World
 // row 0: the lamp, w the outer angle in radians, 0 a point lamp; row 1: its axis, w the mesh's c213 scale; row 2: its
@@ -1061,8 +1146,17 @@ float4 PSGlow(VsOut input) : SV_Target
   // PS 0x2d2e5740) fogs the light by the depth the glows wrote too (the credits stay bright over the far city). So a
   // glow blended over (gta_emissive) goes towards the fog's colour by its distance, an added one (the others) is
   // darkened by it - the same as the game's fog over the glow and what is behind it together.
+  // A glow blended over writes its depth, so the game's pass gives it the depth effect before the fog as well (#136,
+  // GTAIV.3.trace intro s2 f71.25: the credits' light 2.719 / 2.791 / 2.936 before the pass 9023536, 2.248 / 2.678 /
+  // 3.102 after = depth effect and fog at 63.25 m exactly; the luma's gamma brightens them about 10 %).
   float distance = length(f.Eye.xyz - input.world);
   float amount = FogAmount(distance);
+  if ((bits & FGlowOver) != 0)
+  {
+    // The game's pass sees the glow blended, a x glow + (1 - a) x what is behind; over a dark background that is the
+    // effect on a x glow (its luma's gamma taken there), divided by a again for the blend below.
+    rgb = DepthEffect(rgb * a, distance) / max(a, 1e-3);
+  }
   rgb = (bits & FGlowOver) != 0 ? lerp(rgb, FogColour(distance), amount) : rgb * (1 - amount);
   return float4(rgb * a, a);
 }
@@ -1136,7 +1230,7 @@ float4 MirrorSurface(VsOut input, bool toMap)
   }
   if (d.Material.x > 0.5)
   {
-    clip(alpha - (tree ? 0.5 : 0.17648));
+    clip(alpha - (tree ? 0.5 : d.Material.x > 1.0001 ? d.Material.x - 1 : 0.17648));
   }
   // The vertex normal (the page's n before any bump), or the face's without one (Direct3D's screen y down: the
   // page's cross(dFdx, dFdy) turned round).
@@ -1146,7 +1240,16 @@ float4 MirrorSurface(VsOut input, bool toMap)
   float dayNight = f.Params.x;
   float3 vc = input.color;
   float ao = saturate(baked ? dayNight * vc.r + (1 - dayNight) * vc.g : vc.r);
-  float farM = saturate((length(input.world - f.Eye.xyz) - f.FogNear.w) / max(f.FogFar.w - f.FogNear.w, 1));
+  // The fog by the view depth (clip w), not the distance: GTA IV (PC)'s ReflectTexture program (GTAIV.1.trace, bc_3 s2
+  // f786, PS 0x22f07c60 from call 136280082) takes sat((o2.w - globalFogParams.x) / (.y - .x)) with o2.w the clip w
+  // (#148: with the distance the mirror's quay came out hazier and up to a sixth brighter). The map has no view depth:
+  // the distance there.
+#ifdef MIRROR_FOG_BY_DISTANCE
+  float fogAt = length(input.world - f.Eye.xyz);
+#else
+  float fogAt = toMap ? length(input.world - f.Eye.xyz) : input.position.w;
+#endif
+  float farM = saturate((fogAt - f.FogNear.w) / max(f.FogFar.w - f.FogNear.w, 1));
   float3 lit = lerp(albedo * (around * ao + f.Sun.rgb * sunM), f.FogFar.rgb, farM);
   float a = saturate(alpha);
   if (toMap)
@@ -1529,8 +1632,11 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       public uint Start { get; }
       public uint Count { get; }
       public int Texture { get; }
-      public Pass Pass { get; }
-      public bool Cutout { get; }
+      public Pass Pass { get; init; }
+      public bool Cutout { get; init; }
+
+      /// <summary>Its own cut-out threshold (0: the usual 45 / 255).</summary>
+      public float CutAt { get; init; }
       public Vector3? DirtMask { get; }
     }
 
@@ -1618,6 +1724,18 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     private readonly ID3D12PipelineState[] _glowPipelines = new ID3D12PipelineState[4];
     // The frame's day/night factor and exposure (FrameLight), for the glows' strength per instance.
     private float _dayNight, _exposure;
+    // The particles (#118): their pipeline and their data, a slot per frame in flight (ParticleCapacity particles each).
+    private readonly ID3D12PipelineState _particlePipeline;
+    private ID3D12Resource? _particleData;
+    private unsafe Matrix4x4* _particleMapped;
+    private const int ParticleCapacity = 16384;
+
+    /// <summary>The particles left out (for comparisons).</summary>
+    public bool NoParticles { get; set; }
+
+    /// <summary>The particles drawn last frame.</summary>
+    public int ParticlesDrawn { get; private set; }
+
     // The coronas: their pipeline, the sprite's texture number (0: none yet), the solid scene's depth (before the water
     // and the see-through materials) and its texture number.
     private readonly ID3D12PipelineState _coronaPipeline;
@@ -1733,11 +1851,11 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       {
         new StaticSamplerDescription(ShaderVisibility.Pixel, 0, 0)
         {
-          Filter = Filter.Anisotropic,
+          Filter = TextureFilter == 0 ? Filter.MinMagMipLinear : Filter.Anisotropic,
           AddressU = TextureAddressMode.Wrap,
           AddressV = TextureAddressMode.Wrap,
           AddressW = TextureAddressMode.Wrap,
-          MaxAnisotropy = 16,
+          MaxAnisotropy = (uint)Math.Clamp(TextureFilter, 1, 16),
           MaxLOD = float.MaxValue,
         },
         // The mirrored surroundings' map as the page reads it (LINEAR_MIPMAP_LINEAR, CLAMP_TO_EDGE; gtaiv-pc.js ~1214-1218).
@@ -1878,6 +1996,34 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       });
       _solidDepthSlot = _textures.Reserve();
       _coronaSlot = 0;
+      // The particles (DrawParticles, #118): no vertices (six a particle from Palette), blended over the light, depth
+      // tested (LESS_EQUAL as the game's) and not written.
+      var particleBlend = new BlendDescription();
+      particleBlend.RenderTarget[0] = new RenderTargetBlendDescription
+      {
+        BlendEnable = true,
+        SourceBlend = Blend.SourceAlpha,
+        DestinationBlend = Blend.InverseSourceAlpha,
+        BlendOperation = BlendOperation.Add,
+        SourceBlendAlpha = Blend.Zero,
+        DestinationBlendAlpha = Blend.One,
+        BlendOperationAlpha = BlendOperation.Add,
+        RenderTargetWriteMask = ColorWriteEnable.All,
+      };
+      _particlePipeline = d3d.CreateGraphicsPipelineState<ID3D12PipelineState>(new GraphicsPipelineStateDescription
+      {
+        RootSignature = _rootSignature,
+        VertexShader = Compile(DxcShaderStage.Vertex, "VSParticle"),
+        PixelShader = Compile(DxcShaderStage.Pixel, "PSParticle"),
+        SampleMask = uint.MaxValue,
+        PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
+        RasterizerState = RasterizerDescription.CullNone,
+        BlendState = particleBlend,
+        DepthStencilState = new DepthStencilDescription(true, DepthWriteMask.Zero, ComparisonFunction.LessEqual),
+        RenderTargetFormats = new[] { targetFormat },
+        DepthStencilFormat = PanelSwapChainFormats.Depth,
+        SampleDescription = new SampleDescription(1, 0),
+      });
       // The lamps' light volumes (DrawVolumes): the unit meshes as strips, both faces (their winding adds or takes off),
       // no depth test, added onto the light's colour.
       _volumePipeline = d3d.CreateGraphicsPipelineState<ID3D12PipelineState>(new GraphicsPipelineStateDescription
@@ -2251,9 +2397,22 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     /// <summary>The textures on the GPU, those that couldn't be made (drawn white), and their bytes.</summary>
     public (int Made, int Failed, long Bytes) TextureStats => (_textures.Count, _textures.Failed, _textures.Bytes);
 
+    /// <summary>The materials' texture filter (read when the renderer is made), as the game's "Texture Filter Quality":
+    /// 0 Tri-Linear, 2-16 anisotropic with that many samples (default 16, the app's setting). The comparisons take the
+    /// setting each reference was recorded with (Tri-Linear for all until 2026-11-22): anisotropic reads a wet normal
+    /// map's fine detail at grazing angles, which makes the mirrored surroundings glitter where a Tri-Linear game's
+    /// ground stays smooth (#154: all 72 references equal or better with Tri-Linear).</summary>
+    public static int TextureFilter { get; set; } = 16;
+
+    /// <summary>Solid map materials without any texture drawn white, as before #130 (for comparisons).</summary>
+    public static bool UntexturedWhite { get; set; }
+
+    /// <summary>The water's mirror fogged by the distance, as before #148 (for comparisons; read when the shaders are made).</summary>
+    public static bool MirrorFogByDistanceAlways { get; set; }
+
     private static byte[] Compile(DxcShaderStage stage, string entryPoint)
     {
-      using IDxcResult result = DxcCompiler.Compile(stage, Shader, entryPoint);
+      using IDxcResult result = DxcCompiler.Compile(stage, (MirrorFogByDistanceAlways ? "#define MIRROR_FOG_BY_DISTANCE 1\n" : "") + Shader, entryPoint);
       if (result.GetStatus().Failure)
       {
         throw new InvalidOperationException("HLSL " + entryPoint + ": " + result.GetErrors());
@@ -2503,6 +2662,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       var indices = new List<uint>();
       var parts = new List<Part>();
       var partData = new List<uint>();
+      float[] partFloats;
       List<ShapedRange>? shaped = null;
       var min = new Vector3(float.MaxValue);
       var max = new Vector3(float.MinValue);
@@ -2717,10 +2877,11 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         var sub = material.SubSurface is { Length: >= 5 } ss ? ss : null;
         float lampGlow = material.VehicleLights && look != null && look.LightsOn ? material.EmissiveMultiplier ?? 0 : 0;
         int partIndex = parts.Count;
-        AddPart(partData, new uint[] { (uint)texture, (uint)normal, (uint)specular, (uint)environment },
-                new uint[] { (uint)layer[0], (uint)layer[1], (uint)layer[2], (uint)dirtTexture },
+        var partTex = new uint[] { (uint)texture, (uint)normal, (uint)specular, (uint)environment };
+        var partTex2 = new uint[] { (uint)layer[0], (uint)layer[1], (uint)layer[2], (uint)dirtTexture };
+        AddPart(partData, partTex, partTex2,
                 new uint[] { (uint)flags, (uint)layers, layersOn, 0 },
-                new float[]
+                partFloats = new float[]
                 {
                   material.SpecularPower, material.SpecularIntensity, material.Bumpiness, material.Parallax,
                   mask.X, mask.Y, mask.Z, look?.ReflectivePower ?? material.ReflectivePower,
@@ -2739,6 +2900,15 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         if (!textured && (material.Color is { Length: >= 3 } || material.RenderTarget))
         {
           tint = material.Color is { Length: >= 3 } own ? new Vector3(own[0], own[1], own[2]) : Vector3.Zero;
+        }
+        // GTA IV (PC): a solid map material naming no texture at all draws black - the game binds no texture (NULL) and
+        // the program's read gives (0, 0, 0, 1): GTAIV.trace bc_1 s2 f1174, Pub3_BCLights' rod (gta_default, draw
+        // 129306704 after SetTexture(0, NULL) at 129306701) is black, SparkIV drew it white (#130). Not a texture named
+        // but not found (that one the game has).
+        else if (!textured && string.IsNullOrEmpty(material.TextureName) && !UntexturedWhite && pass == Pass.Solid && !material.Vehicle &&
+                 !source.Actor && !material.RenderTarget)
+        {
+          tint = Vector3.Zero;
         }
         // Its kind for the light (see the shader): vehicles are never baked; a glowing material only with a texture,
         // and only solid (the see-through ones glow apart: not yet).
@@ -2781,6 +2951,18 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
           VertexBase = first,
           VertexCount = count,
         });
+        // GTA IV (PC) hair (#135): the game draws gta_hair_sorted_alpha_exp opaque into the G-buffer, then blended passes
+        // over it (SRCALPHA / INVSRCALPHA, GTAIV.trace bc_1 f940 from call 103011448; see docs fxc.md "Hair"), so the
+        // hairline fades into the skin. SparkIV approximates it: where the hair faces the camera solid only from alpha
+        // HairSoft (edge-on, at the outline, from 45 / 255 as before), and a second, blended pass as a decal (colour only,
+        // the skin's normal kept) by alpha / HairSoft. Tuned on intro s3 f1236.50 (Niko's hairline) against bc_3 (the
+        // back of his head): a higher HairSoft softens the hairline more but lightens the hair over the bc_3 references.
+        if (textured && pass == Pass.Solid && material.Shader.StartsWith("gta_hair", StringComparison.OrdinalIgnoreCase))
+        {
+          parts[^1] = parts[^1] with { CutAt = HairSoft, Cutout = true };
+          AddPart(partData, partTex, partTex2, new uint[] { (uint)(flags | PartFlags.TextureAlpha), (uint)layers, layersOn, 0 }, partFloats);
+          parts.Add(parts[^1] with { Pass = Pass.Decal, Cutout = true, CutAt = -0.5f + 0.4f * Math.Min(HairSoft, 1), Index = parts.Count, DirtFirst = false });
+        }
       }
       pending += textureBytes;
       if (indices.Count == 0)
@@ -2817,6 +2999,9 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
     }
 
     // A part's PartData (see the shader): three uint4, then eight float4.
+    // GTA IV (PC) hair (gta_hair_*, #135): solid from this alpha where it faces the camera (see the hair parts above).
+    private const float HairSoft = 0.3f;
+
     private static void AddPart(List<uint> into, uint[] tex, uint[] tex2, uint[] bits, float[] numbers)
     {
       into.AddRange(tex);
@@ -2922,8 +3107,10 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
                             Action<ID3D12GraphicsCommandList>? afterSolid = null, IReadOnlyList<DeferredLight>? lights = null,
                             ID3D12Resource? lightTexture = null, IReadOnlyList<Corona>? coronas = null, ID3D12Resource? depthTexture = null,
                             IReadOnlyList<LightVolume>? volumes = null,
-                            Action<ID3D12GraphicsCommandList, CpuDescriptorHandle, int>? parabolicSky = null, float parabolicHaze = 0)
+                            Action<ID3D12GraphicsCommandList, CpuDescriptorHandle, int>? parabolicSky = null, float parabolicHaze = 0,
+                            IReadOnlyList<ParticleBatch>? particles = null)
     {
+      ParticlesDrawn = 0;
       list.OMSetRenderTargets(renderTarget, depth);
       list.ClearDepthStencilView(depth, ClearFlags.Depth, 1.0f, 0);
       list.RSSetViewport(new Vortice.Mathematics.Viewport(width, height));
@@ -3216,6 +3403,14 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         DrawVolumes(list, volumes!, eye);
         profiler?.End(list, "volumes", DrawCalls);
       }
+      // The particles (#118), before the coronas as the game's (GTAIV.3.trace intro s2 f863: the plume at 34241242, the
+      // coronas from 34241686).
+      if (particles != null && particles.Count > 0 && !NoParticles)
+      {
+        profiler?.Begin(list, "particles", DrawCalls);
+        DrawParticles(list, particles, viewProjection);
+        profiler?.End(list, "particles", DrawCalls);
+      }
       if (coronasOn)
       {
         profiler?.Begin(list, "coronas", DrawCalls);
@@ -3429,6 +3624,59 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
         DrawCalls++;
       }
       list.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+    }
+
+    // The particles over the light (see VSParticle), the light target and the frame's constants bound (Bind): each batch's
+    // particles into this frame's slot of the particle buffer (at most ParticleCapacity a frame), six vertices each.
+    private unsafe void DrawParticles(ID3D12GraphicsCommandList list, IReadOnlyList<ParticleBatch> batches, Matrix4x4 viewProjection)
+    {
+      if (_particleData == null)
+      {
+        _particleData = _device.Device.CreateCommittedResource(new HeapProperties(HeapType.Upload), HeapFlags.None,
+                                                               ResourceDescription.Buffer((ulong)PaletteSlots * ParticleCapacity * 64), ResourceStates.GenericRead);
+        void* mapped;
+        _particleData.Map(0, null, &mapped).CheckError();
+        _particleMapped = (Matrix4x4*)mapped;
+      }
+      var right = Vector3.Normalize(new Vector3(viewProjection.M11, viewProjection.M21, viewProjection.M31));
+      var up = Vector3.Normalize(new Vector3(viewProjection.M12, viewProjection.M22, viewProjection.M32));
+      var forward = Vector3.Normalize(new Vector3(viewProjection.M14, viewProjection.M24, viewProjection.M34));
+      list.SetPipelineState(_particlePipeline);
+      list.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+      var draw = stackalloc float[DrawConstants];
+      int used = 0;
+      foreach (var b in batches)
+      {
+        int count = Math.Min(b.Count, ParticleCapacity - used);
+        if (count <= 0 || b.Texture == 0)
+        {
+          continue;
+        }
+        long at = (long)_paletteSlot * ParticleCapacity + used;
+        fixed (Matrix4x4* source = b.Particles)
+        {
+          Buffer.MemoryCopy(source, _particleMapped + at, count * 64L, count * 64L);
+        }
+        used += count;
+        new Span<float>(draw, DrawConstants).Clear();
+        draw[0] = right.X; draw[1] = right.Y; draw[2] = right.Z;
+        draw[4] = up.X; draw[5] = up.Y; draw[6] = up.Z;
+        draw[8] = forward.X; draw[9] = forward.Y; draw[10] = forward.Z;
+        // Instance: wrap scale, wrap bias, gDiffuse, the intensity clamp.
+        draw[16] = b.WrapScale; draw[17] = b.WrapBias; draw[18] = b.Diffuse; draw[19] = b.IntensityClamp;
+        // Material: the near plane, gScaleFade.
+        draw[20] = b.NearPlane; draw[21] = b.ScaleFade;
+        // DirtMask: gUseShadows, gAmbientAmount, gAmbientShadow, the HDR multiplier.
+        draw[24] = b.Shadow; draw[25] = b.AmbientAmount; draw[26] = b.AmbientShadow; draw[27] = b.HdrMultiplier;
+        // Tint: the atlas's tiles, gSuperAlpha.
+        draw[28] = b.TilesX; draw[29] = b.TilesY; draw[30] = b.SuperAlpha;
+        draw[32] = b.Texture;
+        list.SetGraphicsRoot32BitConstants(0, DrawConstants, draw, 0);
+        list.SetGraphicsRootShaderResourceView(2, _particleData.GPUVirtualAddress + (ulong)at * 64);
+        list.DrawInstanced((uint)count * 6, 1, 0, 0);
+        DrawCalls++;
+        ParticlesDrawn += count;
+      }
     }
 
     // The coronas over the light (see VSCorona), the light target and the frame's constants bound (Bind).
@@ -4053,7 +4301,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
             litDrawn = !(apart && (instance.InRoom || nightGlass || glowGlass));
           }
           var mask = part.DirtMask ?? Vector3.Zero;
-          draw[20] = part.Cutout ? 1 : 0;
+          draw[20] = part.Cutout ? 1 + part.CutAt : 0;
           draw[21] = part.DirtMask != null ? 1 : 0;
           draw[22] = part.Kind;
           draw[23] = part.Glow;
@@ -4195,7 +4443,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
               list.SetGraphicsRoot32BitConstants(0, 20, draw, 0);
             }
             var mask = part.DirtMask ?? Vector3.Zero;
-            draw[20] = part.Cutout ? 1 : 0;
+            draw[20] = part.Cutout ? 1 + part.CutAt : 0;
             draw[21] = part.DirtMask != null ? 1 : 0;
             draw[22] = part.Kind;
             draw[23] = part.Glow;
@@ -4280,6 +4528,58 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       list.ResourceBarrierTransition(_parabolic, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource, ParabolicLevels - 1);
     }
 
+    // (For comparisons with the game's map: its level 0 copied into a readback buffer, then saved as "W H\n" and the
+    // texels' half floats, RGBA, rows from the top.)
+    private ID3D12Resource? _mapReadback;
+    private uint _mapPitch;
+
+    /// <summary>The mirrored surroundings' map's level 0 copied for <see cref="SaveParabolicMap"/> (after Draw, same list).</summary>
+    public void CopyParabolicMap(ID3D12GraphicsCommandList list)
+    {
+      if (_parabolic == null)
+      {
+        return;
+      }
+      _mapPitch = (ParabolicSize * 8 + 255) & ~255u;
+      _mapReadback ??= _device.Device.CreateCommittedResource(new HeapProperties(HeapType.Readback), HeapFlags.None,
+                                                              ResourceDescription.Buffer((ulong)_mapPitch * ParabolicSize), ResourceStates.CopyDest);
+      list.ResourceBarrierTransition(_parabolic, ResourceStates.PixelShaderResource, ResourceStates.CopySource, 0);
+      var footprint = new PlacedSubresourceFootPrint
+      {
+        Offset = 0,
+        Footprint = new SubresourceFootPrint(Format.R16G16B16A16_Float, ParabolicSize, ParabolicSize, 1, _mapPitch),
+      };
+      list.CopyTextureRegion(new TextureCopyLocation(_mapReadback, footprint), 0, 0, 0, new TextureCopyLocation(_parabolic, 0), null);
+      list.ResourceBarrierTransition(_parabolic, ResourceStates.CopySource, ResourceStates.PixelShaderResource, 0);
+    }
+
+    /// <summary>The map copied by <see cref="CopyParabolicMap"/> saved (once the GPU is past it).</summary>
+    public unsafe void SaveParabolicMap(string path)
+    {
+      if (_mapReadback == null)
+      {
+        return;
+      }
+      void* mapped;
+      _mapReadback.Map(0, null, &mapped).CheckError();
+      try
+      {
+        using var fs = System.IO.File.Create(path);
+        var header = System.Text.Encoding.ASCII.GetBytes(ParabolicSize + " " + ParabolicSize + "\n");
+        fs.Write(header, 0, header.Length);
+        var row = new byte[ParabolicSize * 8];
+        for (uint y = 0; y < ParabolicSize; y++)
+        {
+          System.Runtime.InteropServices.Marshal.Copy((IntPtr)((byte*)mapped + (long)y * _mapPitch), row, 0, row.Length);
+          fs.Write(row, 0, row.Length);
+        }
+      }
+      finally
+      {
+        _mapReadback.Unmap(0, null);
+      }
+    }
+
     // The mirrored surroundings' map's states into a list (this frame's or a worker's): its level 0 and depth, the main
     // root signature with the map's frame constants (DrawParabolic's slot), the textures.
     private void SetupParabolic(ID3D12GraphicsCommandList list)
@@ -4341,7 +4641,7 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
             list.SetGraphicsRoot32BitConstants(0, 20, draw, 0);
           }
           var mask = part.DirtMask ?? Vector3.Zero;
-          draw[20] = part.Cutout ? 1 : 0;
+          draw[20] = part.Cutout ? 1 + part.CutAt : 0;
           draw[21] = part.DirtMask != null ? 1 : 0;
           draw[22] = part.Kind;
           draw[23] = part.Glow;
@@ -4394,6 +4694,8 @@ float4 PSSunConvert(float4 position : SV_Position) : SV_Target
       _solidDepth?.Dispose();
       _fullDepth?.Dispose();
       _coronaPipeline.Dispose();
+      _particlePipeline.Dispose();
+      _particleData?.Dispose();
       _volumePipeline.Dispose();
       _spotVolume.Dispose();
       _pointVolume.Dispose();

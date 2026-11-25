@@ -69,7 +69,7 @@ namespace SparkIV.WinUI.Viewers
       TextureList.ItemsSource = _rows.ToList();
       ExportAllButton.IsEnabled = _rows.Count > 0;
       _savedData = context.Data;
-      ReplaceButton.Visibility = context.ReplaceFile != null ? Visibility.Visible : Visibility.Collapsed;
+      ReplaceButton.Visibility = context.ReplaceFile != null && dictionary.CanReplace ? Visibility.Visible : Visibility.Collapsed;
 
       Loaded += (sender, args) =>
       {
@@ -89,7 +89,7 @@ namespace SparkIV.WinUI.Viewers
       };
     }
 
-    private Texture? Selected => (TextureList.SelectedItem as TextureRow)?.Texture;
+    private IViewerTexture? Selected => (TextureList.SelectedItem as TextureRow)?.Texture;
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) => ShowRows(TextureList.SelectedItem);
 
@@ -105,7 +105,7 @@ namespace SparkIV.WinUI.Viewers
     /// <summary>Puts a picture in place of the selected texture, and the changed file back into its archive.</summary>
     private async void Replace_Click(object sender, RoutedEventArgs e)
     {
-      if (TextureList.SelectedItem is not TextureRow row || _context.ReplaceFile == null)
+      if (TextureList.SelectedItem is not TextureRow row || _context.ReplaceFile == null || !_dictionary.CanReplace)
       {
         return;
       }
@@ -147,12 +147,12 @@ namespace SparkIV.WinUI.Viewers
         _rows[index] = updated;
         ShowRows(updated);
         await RenderAsync(fit: false);
-        _context.ShowMessage("Texture replaced", texture.TitleName + " is now " + picked.Name + " (" + texture.Width + " \u00D7 " + texture.Height + ", " +
-                             texture.TextureType + "). " + note, false);
+        _context.ShowMessage("Texture replaced", texture.Title + " is now " + picked.Name + " (" + texture.Width + " \u00D7 " + texture.Height + ", " +
+                             texture.FormatName + "). " + note, false);
       }
       catch (Exception ex)
       {
-        _context.ShowMessage("Could not replace " + texture.TitleName, ex.Message, true);
+        _context.ShowMessage("Could not replace " + texture.Title, ex.Message, true);
       }
       finally
       {
@@ -304,7 +304,7 @@ namespace SparkIV.WinUI.Viewers
         Preview.Width = pixels.Width;
         Preview.Height = pixels.Height;
 
-        InfoText.Text = texture.TitleName + "   \u00B7   " + texture.Width + " \u00D7 " + texture.Height + "   \u00B7   " + texture.TextureType +
+        InfoText.Text = texture.Title + "   \u00B7   " + texture.Width + " \u00D7 " + texture.Height + "   \u00B7   " + texture.FormatName +
                         "   \u00B7   " + (texture.Levels == 1 ? "1 mipmap level" : texture.Levels + " mipmap levels");
         if (fit)
         {
@@ -315,7 +315,7 @@ namespace SparkIV.WinUI.Viewers
       catch (Exception ex)
       {
         Preview.Source = null;
-        _context.ShowMessage("Could not show " + texture.TitleName, ex.Message, true);
+        _context.ShowMessage("Could not show " + texture.Title, ex.Message, true);
       }
       finally
       {
@@ -532,7 +532,7 @@ namespace SparkIV.WinUI.Viewers
         return;
       }
 
-      string? path = await ViewerPages.PickSaveFileAsync(_context.Window, texture.TitleName + ".png", ".png");
+      string? path = await ViewerPages.PickSaveFileAsync(_context.Window, SafeFileName(texture.Title) + ".png", ".png");
       if (path == null)
       {
         return;
@@ -540,12 +540,12 @@ namespace SparkIV.WinUI.Viewers
 
       try
       {
-        await Task.Run(() => SavePng(texture, path));
+        await Task.Run(() => texture.SavePng(path));
         _context.ShowMessage("Exported", path, false);
       }
       catch (Exception ex)
       {
-        _context.ShowMessage("Could not export " + texture.TitleName, ex.Message, true);
+        _context.ShowMessage("Could not export " + texture.Title, ex.Message, true);
       }
     }
 
@@ -568,7 +568,7 @@ namespace SparkIV.WinUI.Viewers
         {
           foreach (var texture in textures)
           {
-            SavePng(texture, Path.Combine(folder.Path, SafeFileName(texture.TitleName) + ".png"));
+            texture.SavePng(Path.Combine(folder.Path, SafeFileName(texture.Title) + ".png"));
           }
         });
         _context.ShowMessage("Exported", (textures.Count == 1 ? "1 texture" : textures.Count + " textures") + " saved to " + folder.Path + ".", false);
@@ -580,16 +580,6 @@ namespace SparkIV.WinUI.Viewers
       finally
       {
         Working.IsActive = false;
-      }
-    }
-
-    /// <summary>The full-size texture with its alpha channel, as it is in the game.</summary>
-    private void SavePng(Texture texture, string path)
-    {
-      lock (_dictionary)
-      {
-        using var image = texture.Decode();
-        image.Save(path, ImageFormat.Png);
       }
     }
 
@@ -660,24 +650,13 @@ namespace SparkIV.WinUI.Viewers
     public int Width { get; }
     public int Height { get; }
 
+    public static TexturePixels Decode(IViewerTexture texture, int level) =>
+      new TexturePixels(texture.DecodeBgra(level), texture.GetWidth(level), texture.GetHeight(level));
+
     public static TexturePixels Decode(Texture texture, int level)
     {
       using Bitmap bitmap = (Bitmap)texture.Decode(level);
-      var rect = new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height);
-      var data = bitmap.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-      try
-      {
-        var bgra = new byte[bitmap.Width * bitmap.Height * 4];
-        for (int y = 0; y < bitmap.Height; y++)
-        {
-          System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, bgra, y * bitmap.Width * 4, bitmap.Width * 4);
-        }
-        return new TexturePixels(bgra, bitmap.Width, bitmap.Height);
-      }
-      finally
-      {
-        bitmap.UnlockBits(data);
-      }
+      return new TexturePixels(TextureBitmaps.ToBgra(bitmap), bitmap.Width, bitmap.Height);
     }
 
     /// <summary>
@@ -729,17 +708,25 @@ namespace SparkIV.WinUI.Viewers
     }
 
     /// <summary>A small opaque version, at most <paramref name="size"/> pixels wide or high.</summary>
-    public static TexturePixels Thumbnail(Texture texture, int size)
+    public static TexturePixels Thumbnail(Texture texture, int size) =>
+      Decode(texture, ThumbnailLevel(texture.Levels, l => (int)texture.GetWidth(l), l => (int)texture.GetHeight(l), size))
+        .ForDisplay(PixelChannel.All, checkerboard: true);
+
+    public static TexturePixels Thumbnail(IViewerTexture texture, int size) =>
+      Decode(texture, ThumbnailLevel(texture.Levels, texture.GetWidth, texture.GetHeight, size))
+        .ForDisplay(PixelChannel.All, checkerboard: true);
+
+    // The smallest level that is still at least as big as the thumbnail (DXT levels below 4 px don't decode).
+    private static int ThumbnailLevel(int levels, Func<int, int> width, Func<int, int> height, int size)
     {
-      // The smallest level that is still at least as big as the thumbnail (DXT levels below 4 px don't decode).
       int level = 0;
-      while (level + 1 < texture.Levels &&
-             Math.Max(texture.GetWidth(level + 1), texture.GetHeight(level + 1)) >= size &&
-             Math.Min(texture.GetWidth(level + 1), texture.GetHeight(level + 1)) >= 4)
+      while (level + 1 < levels &&
+             Math.Max(width(level + 1), height(level + 1)) >= size &&
+             Math.Min(width(level + 1), height(level + 1)) >= 4)
       {
         level++;
       }
-      return Decode(texture, level).ForDisplay(PixelChannel.All, checkerboard: true);
+      return level;
     }
 
     public WriteableBitmap ToBitmap()
@@ -754,11 +741,15 @@ namespace SparkIV.WinUI.Viewers
     }
   }
 
-  /// <summary>A texture dictionary as loaded on the background thread, with its thumbnails already decoded.</summary>
+  /// <summary>
+  /// A texture dictionary as loaded on the background thread, with its thumbnails already decoded: of any
+  /// game and platform SparkIV reads (GTA IV's .wtd and embedded textures, GTA VI's .ztd).
+  /// </summary>
   public sealed class TextureDictionary : IDisposable
   {
-    // One dictionary; or for the textures stored in a model dictionary (.wdd), one per entry that has any.
-    private readonly List<TextureFile> _files;
+    // GTA IV: one dictionary; or for the textures stored in a model dictionary (.wdd), one per entry that
+    // has any. Empty for games whose textures can't be written back yet.
+    private readonly List<TextureFile> _files = new List<TextureFile>();
 
     internal TextureDictionary(TextureFile file) : this(new[] { file })
     {
@@ -767,12 +758,28 @@ namespace SparkIV.WinUI.Viewers
     internal TextureDictionary(IEnumerable<TextureFile> files)
     {
       _files = files.ToList();
-      Textures = _files.SelectMany(f => f.Textures).ToList();
+      Textures = _files.SelectMany(f => f.Textures).Select(t => (IViewerTexture)new GtaIVTexture(t, this)).ToList();
       Thumbnails = Textures.Select(SafeThumbnail).ToList();
     }
 
-    public IReadOnlyList<Texture> Textures { get; }
+    /// <summary>GTA VI: a texture dictionary resource (read-only).</summary>
+    internal TextureDictionary(RageLib.GtaVI.Textures.Rpf9TextureDictionary dictionary)
+      : this(dictionary.Textures.Select(t => (IViewerTexture)new GtaVITexture(dictionary, t)))
+    {
+    }
+
+    /// <summary>Textures that can only be looked at (GTA VI's, a DDS file).</summary>
+    internal TextureDictionary(IEnumerable<IViewerTexture> textures)
+    {
+      Textures = textures.ToList();
+      Thumbnails = Textures.Select(SafeThumbnail).ToList();
+    }
+
+    public IReadOnlyList<IViewerTexture> Textures { get; }
     internal IReadOnlyList<TexturePixels> Thumbnails { get; }
+
+    /// <summary>Whether textures can be replaced and the file written again (GTA IV's).</summary>
+    public bool CanReplace => _files.Count > 0;
 
     /// <summary>
     /// True for the textures of a model or web page: then they are written back into that file's resource
@@ -784,12 +791,16 @@ namespace SparkIV.WinUI.Viewers
     /// Replaces a texture with a picture: scaled to the texture's size and encoded in its format, every
     /// mipmap level made again from it. The texture's size and format stay.
     /// </summary>
-    public void Replace(Texture texture, string picturePath)
+    public void Replace(IViewerTexture texture, string picturePath)
     {
+      if (texture is not GtaIVTexture gtaIV)
+      {
+        throw new NotSupportedException("Textures of this game can't be replaced yet.");
+      }
       using var picture = System.Drawing.Image.FromFile(picturePath);
       lock (this)
       {
-        texture.Encode(picture);
+        gtaIV.Texture.Encode(picture);
       }
     }
 
@@ -824,7 +835,7 @@ namespace SparkIV.WinUI.Viewers
     }
 
     // A texture that doesn't decode still gets a row, with a blank thumbnail.
-    private static TexturePixels SafeThumbnail(Texture texture)
+    private static TexturePixels SafeThumbnail(IViewerTexture texture)
     {
       try
       {
@@ -845,11 +856,24 @@ namespace SparkIV.WinUI.Viewers
     }
   }
 
-  /// <summary>Texture dictionaries (.wtd).</summary>
+  /// <summary>Texture dictionaries: GTA IV's .wtd, GTA VI's .ztd.</summary>
   internal sealed class TextureViewer : IViewer
   {
     public object Load(RageLib.FileSystem.Common.File file, byte[] data)
     {
+      // A DDS image: a texture of a GTA VI texture pool (.ttpf), or one exported.
+      if (DdsImage.IsDds(data))
+      {
+        return new TextureDictionary(new IViewerTexture[] { new DdsTexture(Path.GetFileNameWithoutExtension(file.Name), DdsImage.Open(data)) });
+      }
+
+      // GTA VI: a resource as the RPF9 reader serves it (system + graphics sections).
+      if (RageLib.GtaVI.Pc.Rpf9Resource.TryOpen(data, out _, out var system, out var graphics))
+      {
+        return new TextureDictionary(RageLib.GtaVI.Textures.Rpf9TextureDictionary.TryOpen(system.Span, graphics.Span)
+          ?? throw new InvalidDataException("This resource is no texture dictionary SparkIV can read."));
+      }
+
       var textures = new TextureFile();
       textures.Open(new MemoryStream(data));
       return new TextureDictionary(textures);

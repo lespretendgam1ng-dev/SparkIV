@@ -58,6 +58,8 @@ namespace SparkIV.WinUI
       }
       ShowBackupFolder();
       SeeThroughSwitch.IsOn = AppSettings.CutsceneSeeThroughLikeGame;
+      SmoothEdgesSwitch.IsOn = AppSettings.SmoothEdges;
+      TextureFilterBox.SelectedIndex = AppSettings.TextureFilter switch { 0 => 0, 2 => 1, 4 => 2, 8 => 3, _ => 4 };
       VersionText.Text = "Installed: SparkIV " + Updates.CurrentVersion;
       ChannelBox.SelectedIndex = (int)Updates.Channel;
       AboutVersionText.Text = "SparkIV " + Updates.CurrentVersion;
@@ -73,6 +75,9 @@ namespace SparkIV.WinUI
 
     private async void ShowLicense_Click(object sender, RoutedEventArgs e) =>
       await ShowTextAsync("License", LicenseFile("LICENSE.txt"), null);
+
+    private async void ShowNotice_Click(object sender, RoutedEventArgs e) =>
+      await ShowTextAsync("Notice on use", LicenseFile("NOTICE.txt"), null);
 
     // The notices name further license files (.NET, Windows App SDK, WebView2), too long to show here; they are in the folder.
     private async void ShowNotices_Click(object sender, RoutedEventArgs e) =>
@@ -125,6 +130,17 @@ namespace SparkIV.WinUI
 
     private void SeeThroughSwitch_Toggled(object sender, RoutedEventArgs e) =>
       AppSettings.CutsceneSeeThroughLikeGame = SeeThroughSwitch.IsOn;
+
+    private void SmoothEdgesSwitch_Toggled(object sender, RoutedEventArgs e) =>
+      AppSettings.SmoothEdges = SmoothEdgesSwitch.IsOn;
+
+    private void TextureFilterBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+      if (TextureFilterBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int samples))
+      {
+        AppSettings.TextureFilter = samples;
+      }
+    }
 
     private void ChannelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -221,6 +237,15 @@ namespace SparkIV.WinUI
       Grid.SetColumn(buttons, 1);
       grid.Children.Add(buttons);
 
+      // RDR2: its keys are read once from the running game; run that again (should an update change them).
+      Button? setup = null;
+      if (game == Games.Rdr2)
+      {
+        setup = new Button { Content = "Set up keys…" };
+        ToolTipService.SetToolTip(setup, "Read the keys of the game's archives from the running game again (the setup assistant)");
+        buttons.Children.Insert(0, setup);
+      }
+
       void Show()
       {
         string? stored = AppSettings.GetGamePath(game.Id, platform);
@@ -234,9 +259,42 @@ namespace SparkIV.WinUI
           : stored != null ? "The folder set doesn't contain the game any more" + (folder != null ? "; found automatically: " + folder : "")
           : folder != null ? edition + "Found automatically"
           : "Asked for when it is needed";
+        if (game == Games.Rdr2)
+        {
+          stateText.Text += Rdr2Support.IsSetUp ? "  ·  Keys set up" : "  ·  Keys not set up yet (asked for when the game is opened)";
+        }
         reset.IsEnabled = stored != null;
       }
       Show();
+
+      if (setup != null)
+      {
+        setup.Click += async (sender, args) =>
+        {
+          Info.IsOpen = false;
+          string? folder = Games.InstallFolder(game, platform);
+          if (folder == null)
+          {
+            (folder, string? error) = await GameFolders.PickAsync(this, game, platform);
+            if (error != null)
+            {
+              Info.Title = "Not a folder of " + game.Name;
+              Info.Message = error;
+              Info.IsOpen = true;
+            }
+            if (folder == null)
+            {
+              return;
+            }
+          }
+          var secrets = await Rdr2SetupWindow.RunAsync(folder);
+          if (secrets != null && Rdr2Support.Current?.GameFolder == folder)
+          {
+            Rdr2Support.Activate(folder, secrets);
+          }
+          Show();
+        };
+      }
 
       browse.Click += async (sender, args) =>
       {

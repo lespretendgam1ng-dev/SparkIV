@@ -52,7 +52,12 @@ namespace SparkIV.WinUI.Viewers
 
       ExtendsContentIntoTitleBar = true;
       SetTitleBar(AppTitleBar);
-      Root.Loaded += (sender, args) => TitleBarColors.Apply(this, Root);
+      Root.Loaded += async (sender, args) =>
+      {
+        TitleBarColors.Apply(this, Root);
+        // Started with a file, the viewer can be SparkIV's first window: then the offline-modding notice shows here.
+        await Services.OfflineNotice.ShowIfNeededAsync(Root.XamlRoot);
+      };
       Root.ActualThemeChanged += (sender, args) => TitleBarColors.Apply(this, Root);
 
       string icon = System.IO.Path.Combine(AppContext.BaseDirectory, "SparkIV.ico");

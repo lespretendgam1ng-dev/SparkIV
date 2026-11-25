@@ -99,6 +99,16 @@ The peds' skin G-buffer pass runs with the engine's alpha test (ref 100, `GTAIV.
 `globalScalars.x` × vertex alpha (not the texture's: its alpha holds the subsurface mask); with the engine's
 `ALPHAFUNC` `ALWAYS` (see Hair) it cuts nothing anyway.
 
+## A material without a texture (#130, 2026-11-21)
+
+A material naming no texture at all (no `DiffuseTex` parameter: bc_1's pendant lamp rod, `Pub3_BCLights` mesh 1,
+`gta_default`) is drawn with no texture bound: `GTAIV.trace` bc_1 s2 f1174, `SetTexture(0, NULL)` at call 129306701
+before its G-buffer draw 129306704. A D3D9 program reading an unbound sampler gets (0, 0, 0, 1), so its albedo is black
+and its alpha 1; the rod is black in the game's frame. SparkIV drew such materials white (texture 0); now a solid map
+material without any texture takes black (`MeshRenderer`, `UntexturedWhite` / cutgen `D3D12UNTEXTUREDWHITE=1` for the
+old way). A texture that is named but not found still draws white (the game has it). Visual test: 7 references
+closer by 0.01-0.02, none worse. Status: **used**.
+
 ## gta_ped_reflect
 
 Its G-buffer program is gta_ped's (#156, 2026-11-08): albedo = texture × `matMaterialColorScale` (c66, 1 for all peds
@@ -123,6 +133,13 @@ forward passes) pass everything; what is cut out is cut by the programs' own `te
 stipple). SparkIV keeps cutting hair out at 45 / 255 all the same: cut only at alpha 0, bc_3's hairlines came out
 with a hard dark edge where the game's fade softly into the skin (the blended back-face passes), 7 of 49 references up
 to +0.06 worse (2026-11-01); hair not cut at all the same (+0.06).
+
+Since 2026-11-07 (#135) SparkIV approximates the blended passes: where the hair faces the camera (|n·v| > 0.75) it is
+solid only from alpha 0.3, and a second pass blends its colour over what is below (as a decal: colour only, the
+skin's normal kept) by alpha / 0.3; edge-on, at the outline, it stays cut at 45 / 255 (blended there it took the
+light of the wall behind: a dark rim). Tuned on intro s3 f1236.50 (Niko's hairline, 3.184 → 3.172) against bc_3
+(the back of his head; a solid threshold of 0.4-0.6 softened the hairline more but lightened the hair there). Status:
+**approximated**; how the game's passes give its exact fade is still open (see Open).
 
 ## Trees
 
@@ -319,7 +336,12 @@ it grows by the cloud speed × seconds / 120 (et01_ba f1292.25 to f1394.75: +0.0
 
 `globalFogColor` (the far fog, = `gtaWaterColor`, = water's `bottomSkyColour` × `.w`) is (SkyColor + AzimuthStrength ×
 AzimuthColor) × SkyLightMult: `GTAIV.trace` bc_1 8.144 / 9.262 / 10.094, `GTAIV.2.trace` et01_ba 7.349 / 10.971 /
-14.600, both exactly (`TimeCycle`'s `fog.farColor` since 2026-11-01).
+14.600, both exactly (`TimeCycle`'s `fog.farColor` since 2026-11-01) - both with NearFogAmount 0. **With a near fog
+amount it is eased towards `globalFogColorN` by it** (#138, 2026-11-07): lerp(far, `globalFogColorN`, `globalFogParams`.w).
+`GTAIV.3.trace` intro: `globalFogColorN` (0.594, 1.793, 2.810), the far colour (1.773, 2.028, 2.360); with c41.w = 0.3137
+(from call 6904871, s2 on) c42 = (1.403, 1.954, 2.501), with c41.w = 1/255 (call 4767124) (1.768, 2.027, 2.362) - both
+exactly the lerp. In SparkIV for the scene's fog (`CutsceneLighting`, `FogFar`); the sky's and the water's use of it not
+yet changed (not measured there).
 
 ## Format
 

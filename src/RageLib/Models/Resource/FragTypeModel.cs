@@ -23,6 +23,7 @@ using System.IO;
 using RageLib.Common;
 using RageLib.Common.Resources;
 using RageLib.Common.ResourceTypes;
+using RageLib.GtaIV.Pc.Models;
 
 namespace RageLib.Models.Resource
 {
@@ -99,6 +100,8 @@ namespace RageLib.Models.Resource
     public FragTypeChild[] Children { get; set; }
     /// <summary>The least corner of its collision bound's box (x, y, z); null without a bound.</summary>
     public float[] BoundBoxMin { get; set; }
+    /// <summary>The greatest corner of its collision bound's box (the bound's +0x10); null without a bound.</summary>
+    public float[] BoundBoxMax { get; set; }
 
     #region Implementation of IFileAccess
 
@@ -123,8 +126,31 @@ namespace RageLib.Models.Resource
       uint boundOffset = ResourceUtil.ReadOffset(br);
       if (boundOffset != 0 && boundOffset + 0x30 <= br.BaseStream.Length)
       {
+        br.BaseStream.Seek(boundOffset + 0x10, SeekOrigin.Begin);
+        BoundBoxMax = new[] { br.ReadSingle(), br.ReadSingle(), br.ReadSingle() };
         br.BaseStream.Seek(boundOffset + 0x20, SeekOrigin.Begin);
         BoundBoxMin = new[] { br.ReadSingle(), br.ReadSingle(), br.ReadSingle() };
+      }
+
+      // GTA IV (PC): the fragment's lights (Collection<LightAttrs> at +0x210 of gtaFragType, after fragType itself), as
+      // a model's drawable holds them: a breakable street lamp's (lamppost.img bm_nylamp1a.wft: one light, 255/155/35,
+      // corona 0.8, intensity 1.25 - the corona GTAIV.3.trace draws for it in intro s4 f1833.25, call 160420308).
+      // Taken only as a pointer (0x5...) with a count no larger than its capacity, within the file.
+      br.BaseStream.Seek(0x210, SeekOrigin.Begin);
+      uint lightsPointer = br.ReadUInt32();
+      int lightCount = br.ReadUInt16();
+      int lightCapacity = br.ReadUInt16();
+      uint lightsOffset = lightsPointer & 0x0FFFFFFF;
+      if ((lightsPointer >> 28) == 5 && lightCount > 0 && lightCount <= lightCapacity && lightCount < 256
+          && lightsOffset + (long)lightCount * LightAttributes.Size <= br.BaseStream.Length)
+      {
+        var lights = new LightAttributes[lightCount];
+        for (int i = 0; i < lightCount; i++)
+        {
+          br.BaseStream.Seek(lightsOffset + i * LightAttributes.Size, SeekOrigin.Begin);
+          lights[i] = new LightAttributes(br);
+        }
+        Drawable.Lights = lights;
       }
 
       br.BaseStream.Seek(0x1F3, SeekOrigin.Begin);

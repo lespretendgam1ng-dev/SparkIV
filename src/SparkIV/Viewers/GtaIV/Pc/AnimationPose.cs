@@ -233,6 +233,11 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
             break;
         }
         rotation[bone] = Normalized(q);
+        // An arm roll and the neck roll sit where their leader is (see CutscenePose.SkinAt, #129).
+        if ((kind == "armRoll" || kind == "neckRoll") && a >= 0 && _skeleton!.Parent[a] == _skeleton.Parent[bone])
+        {
+          position[bone] = position[a];
+        }
       }
       return (position, rotation);
     }
@@ -298,7 +303,8 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
       for (int b = 0; b < n; b++)
       {
-        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || !tracked.Contains(b)))
+        // (The upper arm roll too, track or not: see CutscenePose, #141.)
+        if (GameHelper(b) is var (kind, a, c) && (kind == "foreTwist" || kind == "upperArmRoll" || !tracked.Contains(b)))
         {
           _helpers.Add((b, kind, a, c));
         }

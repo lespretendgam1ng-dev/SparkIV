@@ -190,6 +190,9 @@ Texture2D Perlin : register(t2);     // rage_perlinnoise's target
 Texture2D StarField : register(t3);  // starfield of skydome.wtd
 Texture2D Galaxy : register(t4);     // galaxy of skydome.wtd
 SamplerState Wrap : register(s0);
+// The perlin pass's: trilinear without anisotropy (GTAIV.1.trace, bc_3 s3, the pass at call 182003640: MIN/MAG/MIP
+// LINEAR, wrap; the sky draw's own samplers are anisotropic). #145.
+SamplerState Trilinear : register(s1);
 
 struct VsOut { float4 position : SV_Position; float2 ndc : TEXCOORD0; };
 
@@ -220,7 +223,7 @@ float4 PSPerlin(VsOut i) : SV_Target
   float higher = 0, weight = 0.5, f1 = 1, f2 = 1;
   [unroll] for (int k = 0; k < 6; k++)
   {
-    float2 both = (Clouds.Sample(Wrap, at * f1 + phase * Velocity1).rg + Clouds.Sample(Wrap, at * f2 + phase * Velocity2).rg) * weight;
+    float2 both = (Clouds.Sample(Trilinear, at * f1 + phase * Velocity1).rg + Clouds.Sample(Trilinear, at * f2 + phase * Velocity2).rg) * weight;
     sum += both;
     if (k >= 2)
     {
@@ -298,8 +301,9 @@ float4 PSSky(VsOut i) : SV_Target
   float c = dot(dir, sunDir);
   float a = saturate(saturate(1 - s.Hdr.z) * (12.58 * c - 11.6163721));
   float b = saturate(0.9375 - 0.0625 * c);
-  // SunSize 1 in both traces; the disc term x SunCentre.z (0 there) left out.
-  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + sunDir.z) + saturate(0.5 * c - 0.0625)) * 0.5) * 4;
+  // SunSize 1 in both traces; the disc term x SunCentre.z (0 there) left out. SunDirection.w is the sun's height
+  // without its sign (GTAIV.1 0.9226 at day, GTAIV.3 0.1833 at dawn with the sun 0.1833 below the horizon).
+  float sun = saturate((Pow32(a) - b * b * b * saturate(0.6 + abs(sunDir.z)) + saturate(0.5 * c + 0.5)) * 0.5) * 4;
   float3 sunLight = sun * s.SunColor.rgb;
   float3 sunLight2 = sunLight * sunLight;
   float3 glow = (sunLight + sunLight2 * sunLight2) * s.Hdr.y + saturate(saturate(1 - sun) * s.Hdr.y * skyV);
@@ -402,6 +406,14 @@ float4 PSSky(VsOut i) : SV_Target
           AddressV = TextureAddressMode.Wrap,
           AddressW = TextureAddressMode.Wrap,
           MaxAnisotropy = 16,
+          MaxLOD = float.MaxValue,
+        },
+        new StaticSamplerDescription(ShaderVisibility.Pixel, 1, 0)
+        {
+          Filter = Filter.MinMagMipLinear,
+          AddressU = TextureAddressMode.Wrap,
+          AddressV = TextureAddressMode.Wrap,
+          AddressW = TextureAddressMode.Wrap,
           MaxLOD = float.MaxValue,
         },
       };

@@ -1,7 +1,8 @@
 # Cutscene helper bones: twist and roll (GTA IV, PC)
 
 Status: **used** (arm roll, upper arm roll, forearm twist, neck roll, calf roll). Applied in
-`src/SparkIV/Viewers/ModelView.html` (`gameHelper`, `findFollowers`, `sampledPose`).
+`src/SparkIV/Viewers/GtaIV/Pc/CutscenePose.cs` (cutscenes) and `AnimationPose.cs` (the animation view); first written
+for the WebGL page's `ModelView.html` (`gameHelper`, `findFollowers`, `sampledPose`), which is gone.
 
 ## What they are
 
@@ -30,9 +31,21 @@ about x.
 | `Neck_Roll` | the head's local rotation |
 | `L_Calf_Roll`, `R_Calf_Roll` | none (its rest's 2.4° are not kept) |
 
+- **Their place** (#129, 2026-11-21): `L_ArmRoll`, `R_ArmRoll` and `Neck_Roll` sit where their leader is, not at their
+  own rest place. Bernie's rest data put `ArmRoll` 0.1601 m along the clavicle and the upper arm 0.1663 m, `Neck_Roll`
+  at the neck's origin and the head 0.0795 m from it. In `GTAIV.trace` (bc_1 s2 f715.5, his jacket's palette at call
+  120034252, 24 bones) the game's `ArmRoll` matrices lay 6.2 mm and its `Neck_Roll` 79.5 mm from SparkIV's, exactly
+  those distances, while every turn matched within 0.07°. With the leader's place all 24 bones are within 0.2 mm; the
+  stripes on Bernie's sleeves no longer show double (bc_1 s2 f715.50 1.68 -> 1.36, s3 f299.75 2.82 -> 2.55, s3 f994.50
+  1.59 -> 1.33; 29 references closer, none worse). `UpperArmRoll` (at the clavicle) and the forearm twist were placed
+  right already.
 - The upper arm roll bones share the upper arm's twist: what `ArmRoll` loses (0.25 X) is 5/3 of what `UpperArmRoll`
   gets (0.15 X); found as an exact relation first (residual 0.00° over 27 frames).
-- `Char_*_ForeTwist` tracks in a clip are **ignored**; the other helpers keep a clip's track where it has one.
+- `Char_*_ForeTwist` and `*_UpperArmRoll` tracks in a clip are **ignored**; the other helpers keep a clip's track where
+  it has one. The upper arm roll (#141, 2026-11-21): Elizabeta's clip in TLAD's et01_aa has tracks for both; with them
+  her `L_UpperArmRoll` / `R_UpperArmRoll` lay 21° / 13° off the game's palette (`GTAIV.2.trace` s2 f79.5, call
+  71241894), with the rule within 0.04°. Her satin collar's highlight then lies where the game's does (et01_aa s2
+  f79.50 2.84 -> 2.62, s3 f288.00 2.42 -> 2.20; 27 references closer, bc_1 s1 f459.50 +0.01).
 - Other twist or roll bones (not named above) without a track, at the same place (within 3 cm) under the same parent as
   a bone with a track, follow that bone's turn away from its rest (not checked against the game).
 - Before (to 2026-10-31) SparkIV let `ArmRoll` follow the whole upper arm and kept `UpperArmRoll`, `Neck_Roll` and

@@ -45,7 +45,7 @@ namespace SparkIV.WinUI.Rendering.D3D12
     private const string Shader = @"
 struct Constants
 {
-  float4 Scale;      // x: tone scale, y: saturation, z: gamma, w: unused
+  float4 Scale;      // x: tone scale, y: saturation, z: gamma, w: the depth of field's reach (0: none)
   float4 Correct;    // rgb: colour correction (x 2 in the shader)
   float4 Shift;      // rgb: colour shift, w: 1 / (its luminance + 0.001)
   float4 Texel;      // xy: 1 / the read texture's size
@@ -117,6 +117,8 @@ float4 PSComposite(VsOut i) : SV_Target
     // (-1.5, 0.5) where anything was drawn (the G-buffer's GB2.w); then lerp(point, their mean).
     float d = Depth.Load(int3(i.position.xy, 0));
     float z = c.Dof.x * c.Dof.y / (c.Dof.y - d * (c.Dof.y - c.Dof.x));
+    // (Held at the reach: the game reads the depth through its own projection, whose far clip ends it.)
+    if (c.Scale.w > 0) z = min(z, c.Scale.w);
     float b = min(max(max(c.Dof.z - z, z - c.Dof.w), 0) * 2.0, 1.0);
     b *= b;
     float3 s0 = LightAt(i.uv + t * float2(-0.5, -1.5)), s1 = LightAt(i.uv + t * float2(1.5, -0.5));
@@ -143,10 +145,80 @@ float4 PSComposite(VsOut i) : SV_Target
   col *= c.Correct.rgb * 2.0;
   return float4(saturate(col * pow(clamp(L, 1e-5, 1.0), c.Scale.z - 1.0)) * (1 - c.Grain.w), 1);
 }
+
+// Edge smoothing (FXAA 3.11, quality preset 12; not the game's: GTA IV on PC smooths no edges): on the finished
+// picture (Light holds it here), the luma's local contrast finds an edge, a search along it finds its ends, and the
+// pixel is read shifted across the edge by how near it is to an end; a sub-pixel blend softens single bright texels.
+float FxaaLuma(float3 rgb) { return dot(rgb, float3(0.299, 0.587, 0.114)); }
+float LumaAt(float2 uv) { return FxaaLuma(Light.SampleLevel(Linear, uv, 0).rgb); }
+
+float4 PSFxaa(VsOut i) : SV_Target
+{
+  float2 t = c.Texel.xy;
+  float2 uv = i.uv;
+  float3 rgbM = Light.SampleLevel(Linear, uv, 0).rgb;
+  float lumaM = FxaaLuma(rgbM);
+  float lumaS = LumaAt(uv + float2(0, t.y)), lumaE = LumaAt(uv + float2(t.x, 0));
+  float lumaN = LumaAt(uv - float2(0, t.y)), lumaW = LumaAt(uv - float2(t.x, 0));
+  float rangeMax = max(max(max(lumaS, lumaE), max(lumaN, lumaW)), lumaM);
+  float rangeMin = min(min(min(lumaS, lumaE), min(lumaN, lumaW)), lumaM);
+  float range = rangeMax - rangeMin;
+  // Edge threshold 0.166, at least 0.0833 (FXAA's defaults).
+  if (range < max(0.0833, rangeMax * 0.166))
+  {
+    return float4(rgbM, 1);
+  }
+  float lumaNW = LumaAt(uv + float2(-t.x, -t.y)), lumaSE = LumaAt(uv + float2(t.x, t.y));
+  float lumaNE = LumaAt(uv + float2(t.x, -t.y)), lumaSW = LumaAt(uv + float2(-t.x, t.y));
+  float lumaNS = lumaN + lumaS, lumaWE = lumaW + lumaE;
+  float edgeHorz = abs(-2 * lumaW + lumaNW + lumaSW) + abs(-2 * lumaM + lumaNS) * 2 + abs(-2 * lumaE + lumaNE + lumaSE);
+  float edgeVert = abs(-2 * lumaS + lumaSW + lumaSE) + abs(-2 * lumaM + lumaWE) * 2 + abs(-2 * lumaN + lumaNW + lumaNE);
+  bool horz = edgeHorz >= edgeVert;
+  // The sub-pixel part (amount 0.75).
+  float subA = (2 * (lumaNS + lumaWE) + lumaNW + lumaSW + lumaNE + lumaSE) / 12;
+  float sub = saturate(abs(subA - lumaM) / range);
+  sub = (-2 * sub + 3) * sub * sub;
+  float subBlend = sub * sub * 0.75;
+  float lengthSign = horz ? t.y : t.x;
+  float luma1 = horz ? lumaN : lumaW, luma2 = horz ? lumaS : lumaE;
+  float grad1 = abs(luma1 - lumaM), grad2 = abs(luma2 - lumaM);
+  bool pairN = grad1 >= grad2;
+  float gradient = max(grad1, grad2) * 0.25;
+  float lumaPair = (pairN ? luma1 : luma2);
+  if (pairN) lengthSign = -lengthSign;
+  float lumaLocal = (lumaPair + lumaM) * 0.5;
+  float2 pos = uv;
+  if (horz) pos.y += lengthSign * 0.5; else pos.x += lengthSign * 0.5;
+  float2 step = horz ? float2(t.x, 0) : float2(0, t.y);
+  // Along the edge both ways (12 steps, growing: FXAA's quality 12).
+  const float stepScale[12] = { 1, 1, 1, 1, 1, 1.5, 2, 2, 2, 2, 4, 8 };
+  float2 posN = pos - step, posP = pos + step;
+  float endN = LumaAt(posN) - lumaLocal, endP = LumaAt(posP) - lumaLocal;
+  bool doneN = abs(endN) >= gradient, doneP = abs(endP) >= gradient;
+  [unroll] for (int k = 1; k < 12; k++)
+  {
+    if (doneN && doneP) break;
+    if (!doneN) { posN -= step * stepScale[k]; endN = LumaAt(posN) - lumaLocal; doneN = abs(endN) >= gradient; }
+    if (!doneP) { posP += step * stepScale[k]; endP = LumaAt(posP) - lumaLocal; doneP = abs(endP) >= gradient; }
+  }
+  float dstN = horz ? uv.x - posN.x : uv.y - posN.y;
+  float dstP = horz ? posP.x - uv.x : posP.y - uv.y;
+  bool nearerN = dstN < dstP;
+  float dst = min(dstN, dstP);
+  float endLuma = nearerN ? endN : endP;
+  // Only where the edge's end turns the right way (else this pixel is not on the edge's step).
+  bool mLess = lumaM - lumaLocal < 0;
+  bool good = (endLuma < 0) != mLess;
+  float pixelOffset = good ? -dst / (dstN + dstP) + 0.5 : 0;
+  float offset = max(pixelOffset, subBlend);
+  float2 at = uv;
+  if (horz) at.y += offset * lengthSign; else at.x += offset * lengthSign;
+  return float4(Light.SampleLevel(Linear, at, 0).rgb, 1);
+}
 ";
 
     private const int NoiseSize = 1024;
-    private const int SlotLight = 0, SlotQuarter = 1, SlotBlurred = 2, SlotDepth = 3, SlotNoise = 4;
+    private const int SlotLight = 0, SlotQuarter = 1, SlotBlurred = 2, SlotDepth = 3, SlotNoise = 4, SlotPicture = 5;
     private const int MappingDefault = 0 | (1 << 3) | (2 << 6) | (3 << 9) | (1 << 12);
 
     private readonly D3D12Device _device;
@@ -154,6 +226,11 @@ float4 PSComposite(VsOut i) : SV_Target
     private readonly ID3D12PipelineState _down;
     private readonly ID3D12PipelineState _blur;
     private readonly ID3D12PipelineState _composite;
+    private readonly ID3D12PipelineState _fxaa;
+    private readonly Format _targetFormat;
+    // The composite's picture when the edges are smoothed after it (the target's format, the target's size).
+    private ID3D12Resource? _picture;
+    private int _pictureWidth, _pictureHeight;
     private readonly ID3D12DescriptorHeap _srvHeap;
     private readonly ID3D12DescriptorHeap _rtvHeap;
     private readonly uint _srvSize, _rtvSize;
@@ -212,8 +289,10 @@ float4 PSComposite(VsOut i) : SV_Target
       _down = d3d.CreateGraphicsPipelineState<ID3D12PipelineState>(Pipeline("PSDown", LightFormat));
       _blur = d3d.CreateGraphicsPipelineState<ID3D12PipelineState>(Pipeline("PSBlur", LightFormat));
       _composite = d3d.CreateGraphicsPipelineState<ID3D12PipelineState>(Pipeline("PSComposite", targetFormat));
-      _srvHeap = d3d.CreateDescriptorHeap(new DescriptorHeapDescription(DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView, 5, DescriptorHeapFlags.ShaderVisible));
-      _rtvHeap = d3d.CreateDescriptorHeap(new DescriptorHeapDescription(DescriptorHeapType.RenderTargetView, 3));
+      _fxaa = d3d.CreateGraphicsPipelineState<ID3D12PipelineState>(Pipeline("PSFxaa", targetFormat));
+      _targetFormat = targetFormat;
+      _srvHeap = d3d.CreateDescriptorHeap(new DescriptorHeapDescription(DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView, 6, DescriptorHeapFlags.ShaderVisible));
+      _rtvHeap = d3d.CreateDescriptorHeap(new DescriptorHeapDescription(DescriptorHeapType.RenderTargetView, 4));
       _srvSize = d3d.GetDescriptorHandleIncrementSize(DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
       _rtvSize = d3d.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
       // Empty views until there are depth and grain textures (the composite's table always holds all four).
@@ -251,6 +330,35 @@ float4 PSComposite(VsOut i) : SV_Target
     public ID3D12Resource? LightTexture => _light;
     private CpuDescriptorHandle QuarterView => _rtvHeap.GetCPUDescriptorHandleForHeapStart() + (int)_rtvSize;
     private CpuDescriptorHandle BlurredView => _rtvHeap.GetCPUDescriptorHandleForHeapStart() + 2 * (int)_rtvSize;
+    private CpuDescriptorHandle PictureView => _rtvHeap.GetCPUDescriptorHandleForHeapStart() + 3 * (int)_rtvSize;
+
+    /// <summary>
+    /// Smooth the edges after the tone mapping (FXAA). Off by default: GTA IV on PC smooths no edges, so the pictures
+    /// compared with the game's (cutgen) stay without it; the app's view turns it on by its setting.
+    /// </summary>
+    public bool AntiAliasing { get; set; }
+
+    // The picture the composite writes into when the edges are smoothed after it (made again when the size changes).
+    private void EnsurePicture(int width, int height)
+    {
+      if (_picture != null && _pictureWidth == width && _pictureHeight == height)
+      {
+        return;
+      }
+      if (_picture != null)
+      {
+        _device.WaitIdle();
+        _picture.Dispose();
+      }
+      _pictureWidth = width;
+      _pictureHeight = height;
+      var d3d = _device.Device;
+      _picture = d3d.CreateCommittedResource(new HeapProperties(HeapType.Default), HeapFlags.None,
+        ResourceDescription.Texture2D(_targetFormat, (uint)width, (uint)height, 1, 1, 1, 0, ResourceFlags.AllowRenderTarget),
+        ResourceStates.RenderTarget, new ClearValue(_targetFormat, new Vortice.Mathematics.Color4(0, 0, 0, 1)));
+      d3d.CreateRenderTargetView(_picture, null, PictureView);
+      d3d.CreateShaderResourceView(_picture, null, SrvAt(SlotPicture));
+    }
 
     /// <summary>The adapted luminance now (null before the first measure), and the last one measured.</summary>
     public float? Adapted { get; private set; }
@@ -539,6 +647,7 @@ float4 PSComposite(VsOut i) : SV_Target
       constants[11] = 1f / (Vector3.Dot(tone.ColorShift, new Vector3(0.2125f, 0.7154f, 0.0721f)) + 0.001f);
       constants[12] = 1f / Width;
       constants[13] = 1f / Height;
+      constants[3] = dof ? post.DofReach : 0;
       constants[16] = dof ? post.NearClip : 0;
       constants[17] = dof ? post.FarClip : 0;
       constants[18] = post.FocusNear;
@@ -550,7 +659,12 @@ float4 PSComposite(VsOut i) : SV_Target
       constants[24] = bloom ? tone.Bloom * 0.25f : 0;
       constants[25] = tone.BrightPass;
       constants[26] = constants[27] = 0;
-      list.OMSetRenderTargets(target);
+      bool smooth = AntiAliasing && width > 2 && height > 2;
+      if (smooth)
+      {
+        EnsurePicture(width, height);
+      }
+      list.OMSetRenderTargets(smooth ? PictureView : target);
       list.RSSetViewport(new Vortice.Mathematics.Viewport(width, height));
       list.RSSetScissorRect(width, height);
       Bind(list, _composite, SlotLight, constants);
@@ -561,6 +675,18 @@ float4 PSComposite(VsOut i) : SV_Target
         list.ResourceBarrierTransition(depth!, ResourceStates.PixelShaderResource, ResourceStates.DepthWrite);
       }
       profiler?.End(list, "post: tone map + DOF + grain");
+      if (smooth)
+      {
+        profiler?.Begin(list, "post: edge smoothing");
+        list.ResourceBarrierTransition(_picture!, ResourceStates.RenderTarget, ResourceStates.PixelShaderResource);
+        constants[12] = 1f / width;
+        constants[13] = 1f / height;
+        list.OMSetRenderTargets(target);
+        Bind(list, _fxaa, SlotPicture, constants);
+        list.DrawInstanced(3, 1, 0, 0);
+        list.ResourceBarrierTransition(_picture!, ResourceStates.PixelShaderResource, ResourceStates.RenderTarget);
+        profiler?.End(list, "post: edge smoothing");
+      }
     }
 
     public void Dispose()
@@ -572,11 +698,13 @@ float4 PSComposite(VsOut i) : SV_Target
       _readback?.Dispose();
       _noise?.Dispose();
       _noiseUpload?.Dispose();
+      _picture?.Dispose();
       _srvHeap.Dispose();
       _rtvHeap.Dispose();
       _down.Dispose();
       _blur.Dispose();
       _composite.Dispose();
+      _fxaa.Dispose();
       _rootSignature.Dispose();
     }
   }

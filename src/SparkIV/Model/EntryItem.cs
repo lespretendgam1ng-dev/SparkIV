@@ -38,7 +38,9 @@ namespace SparkIV.WinUI.Model
       if (entry is File file)
       {
         SizeText = FriendlySize(file.Size);
-        Resource = file.IsResource ? ResourceName(file) : "";
+        Resource = !string.IsNullOrEmpty(file.Detail) ? file.Detail
+                 : file.IsResource ? ResourceName(file) : "";
+        DetailLong = file.DetailLong;
       }
     }
 
@@ -50,6 +52,9 @@ namespace SparkIV.WinUI.Model
     public string TypeName => Type.Name;
     public string SizeText { get; } = "";
     public string Resource { get; } = "";
+
+    /// <summary>A longer, labelled explanation shown in the status bar on selection.</summary>
+    public string DetailLong { get; } = "";
 
     /// <summary>Changed and not saved yet (the old SparkIV showed these in blue).</summary>
     public bool IsUnsaved { get; }

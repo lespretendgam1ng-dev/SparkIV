@@ -136,6 +136,9 @@ namespace SparkIV.WinUI.Viewers
     /// </summary>
     public float[]? BodyBoundsMin { get; private set; }
 
+    /// <summary>The same box's corner of greatest x, y, z (the bound's +0x10): the car's front for its headlight's light.</summary>
+    public float[]? BodyBoundsMax { get; private set; }
+
     /// <summary>A scene without models or textures, for shapes built elsewhere (collision).</summary>
     internal static ModelScene Empty(string name) => new ModelScene(name, new List<TextureFile>());
 
@@ -549,6 +552,7 @@ namespace SparkIV.WinUI.Viewers
             var body = fragment.GetDataModel();
             scene.AddDrawable(scene.Root, "Body", body, true);
             scene.BodyBoundsMin = fragment.GetBoundBoxMin();
+            scene.BodyBoundsMax = fragment.GetBoundBoxMax();
             scene.AddFragmentChildren(body, fragment.GetChildren());
             break;
           }
@@ -839,7 +843,7 @@ namespace SparkIV.WinUI.Viewers
                                     light.IsSpot, light.Range, light.Falloff, meshIds, light.Distance, light.HotSpot, light.Intensity)
                      {
                        Flags = light.Flags, CoronaSize = light.CoronaSize, VolumeIntensity = light.VolumeIntensity, VolumeSize = light.VolumeSize,
-                       FadeDistance = light.FadeDistance,
+                       FadeDistance = light.FadeDistance, Frame = at,
                        Tangent = System.Numerics.Vector3.TransformNormal(new System.Numerics.Vector3(light.Tangent.X, light.Tangent.Y, light.Tangent.Z), at),
                      });
         }
@@ -1376,6 +1380,10 @@ namespace SparkIV.WinUI.Viewers
 
     /// <summary>Its second axis (a spot's "up"; the light volume's mesh is turned by it).</summary>
     public System.Numerics.Vector3 Tangent { get; init; }
+
+    /// <summary>The frame of the bone it moves with, in its rest pose (identity at the root): GTA IV's traffic lights
+    /// take their facing from it.</summary>
+    public System.Numerics.Matrix4x4 Frame { get; init; } = System.Numerics.Matrix4x4.Identity;
   }
 
   /// <summary>A bone: its place and turn relative to its parent (Euler angles in radians, as RageLib reads them).</summary>

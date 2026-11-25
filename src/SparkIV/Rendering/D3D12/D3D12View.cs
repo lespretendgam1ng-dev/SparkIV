@@ -72,6 +72,8 @@ namespace SparkIV.WinUI.Rendering.D3D12
       _device = new D3D12Device();
       _swapChain = new PanelSwapChain(_device, panel, _width, _height, _scaleX, _scaleY);
       D3D12Device.Log("swap chain: at most " + _swapChain.MaximumFrameLatency + " frame(s) queued");
+      // The texture filter by the setting (read when the renderer is made; cutgen takes each reference's own).
+      MeshRenderer.TextureFilter = SparkIV.WinUI.Services.AppSettings.TextureFilter;
       _renderer = new MeshRenderer(_device, ToneMapper.LightFormat);
       _toneMapper = new ToneMapper(_device, PanelSwapChain.BackBufferFormat);
       _lines = new LineOverlay(_device, PanelSwapChain.BackBufferFormat, PanelSwapChain.DepthFormat);
@@ -179,6 +181,8 @@ namespace SparkIV.WinUI.Rendering.D3D12
           else
           {
             _toneMapper.Resize(_swapChain.Width, _swapChain.Height);
+            // Edge smoothing by the setting (only here: cutgen's pictures for the comparisons with the game stay without).
+            _toneMapper.AntiAliasing = SparkIV.WinUI.Services.AppSettings.SmoothEdges;
             // The eye adapts to the last measure read (a few frames old): gently while playing, at once when stopped.
             _toneMapper.ReadMeasure(wait: false);
             _toneMapper.Adapt(view.Tone, view.Playing, last > 0 ? now - last : 0);
@@ -192,7 +196,8 @@ namespace SparkIV.WinUI.Rendering.D3D12
             _renderer.Draw(list, _toneMapper.LightView, _swapChain.DepthView, _swapChain.Width, _swapChain.Height, view.ViewProjection, view.Eye, view.Light,
                            l => _scene.DrawAfterSolid(_device, l, _toneMapper.LightView, _swapChain.DepthView, _swapChain.Width, _swapChain.Height, view, _swapChain.DepthBuffer),
                            view.Lights, _toneMapper.LightTexture, view.Coronas, _swapChain.DepthBuffer, view.Volumes,
-                           view.ParabolicHaze != null ? (l, t, n) => _scene.DrawParabolicSky(_device, l, t, n, view) : null, view.ParabolicHaze ?? 0);
+                           view.ParabolicHaze != null ? (l, t, n) => _scene.DrawParabolicSky(_device, l, t, n, view) : null, view.ParabolicHaze ?? 0,
+                           view.Particles);
             _toneMapper.EndLight(list);
             // Measured at most every 200 ms (as the page), else when the last measure is read.
             measured = now - _lastMeasure >= 0.2 && _toneMapper.Measure(list);

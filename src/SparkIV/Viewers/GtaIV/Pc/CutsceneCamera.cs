@@ -114,7 +114,16 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     /// The camera's depth of field at a frame of its clip (the page's filmCameraNow's dof): sharp from Near to Far
     /// (metres from the camera), blurred nearer and beyond (GTAIV.exe's DOF_PARAMS, FUN_005E16F0); null without the track.
     /// </summary>
-    public (float Near, float Far)? DofAt(double frame)
+    public (float Near, float Far)? DofAt(double frame) => DofOf(frame);
+
+    /// <summary>
+    /// GTA IV (PC): how far the depth of field reads the depth - its own projection (dofProj = (0.05, 1500): GTAIV.1.trace
+    /// bc_3 f870, GTAIV.3.trace intro s2 f352.75 call 19415638), so nothing lies beyond 1500 m for it: a far focus of
+    /// 1600 m leaves even the sky sharp (#138).
+    /// </summary>
+    public const float DofReach = 1500;
+
+    private (float Near, float Far)? DofOf(double frame)
     {
       if (_dof == null || _dof.Length < 3)
       {
@@ -122,7 +131,10 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
       int whole = (int)Math.Floor(Math.Clamp(frame, 0, Frames - 1) + 1e-6);
       int at = Math.Min(whole, _dof.Length / 3 - 1) * 3;
-      return (_dof[at], _dof[at + 1]);
+      // GTA IV (PC): a negative far is taken by its size. The intro's s2 track gives (1, -1600) at f352.75; the game's
+      // depth of field there gets dofDist (0.5, 1599, 0.5, 800.5) = sharp from 1 to 1600 m (GTAIV.3.trace, call
+      // 19415637); taken as it is, everything beyond 1 m came out blurred (#138).
+      return (_dof[at], MathF.Abs(_dof[at + 1]));
     }
 
     private Vector3 Position(int frame)

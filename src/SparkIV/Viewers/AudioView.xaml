@@ -42,6 +42,10 @@
                           ToolTipService.ToolTip="Convert the whole bank to one multichannel WAV file">
                 <AppBarButton.Icon><FontIcon Glyph="&#xE8B1;" /></AppBarButton.Icon>
             </AppBarButton>
+            <AppBarButton x:Name="ExportRawButton" Label="Export stored data" Click="ExportRaw_Click" Visibility="Collapsed"
+                          ToolTipService.ToolTip="Save the selected track's audio data as it is stored (not converted)">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE9F9;" /></AppBarButton.Icon>
+            </AppBarButton>
             <AppBarSeparator />
             <AppBarButton Label="Export original" Click="ExportOriginal_Click"
                           ToolTipService.ToolTip="Save the file exactly as it is in the archive; only this can be edited and imported back">
@@ -92,7 +96,7 @@
                     </ListView.GroupStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="model:AudioTrackRow">
-                            <Grid Opacity="{x:Bind RowOpacity}" ToolTipService.ToolTip="Double-click to play">
+                            <Grid Opacity="{x:Bind RowOpacity}" ToolTipService.ToolTip="{x:Bind PlayHint}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="200" />
                                     <ColumnDefinition Width="170" />

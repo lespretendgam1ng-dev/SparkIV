@@ -39,23 +39,40 @@ namespace SparkIV.WinUI
   /// </summary>
   public sealed partial class GameChooserWindow : Window
   {
-    private readonly TaskCompletionSource<GameInstall?> _result = new TaskCompletionSource<GameInstall?>();
+    // Continuations not inline: the window may be closing (X) when the result is set.
+    private readonly TaskCompletionSource<GameInstall?> _result = new TaskCompletionSource<GameInstall?>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _closed;
 
-    private GameChooserWindow(string path, bool optional)
+    /// <param name="path">The file the game is asked for; null when SparkIV starts and asks which game to open.</param>
+    private GameChooserWindow(string? path, bool optional)
     {
       InitializeComponent();
 
       Title = "Select game - SparkIV";
       TitleText.Text = "Select game";
-      FileText.Text = Path.GetFileName(path) + " is not in a game folder. " +
-                      (optional ? "With its game, the page shows the game's texts and links to the other sites."
-                                : "SparkIV needs the game for the key of the archive.");
-      CancelButton.Content = optional ? "Without game" : "Cancel";
+      if (path == null)
+      {
+        QuestionText.Text = "Which game do you want to open?";
+        FileText.Text = "SparkIV shows the game's folder and archives.";
+        CancelButton.Content = "Close";
+      }
+      else
+      {
+        FileText.Text = Path.GetFileName(path) + " is not in a game folder. " +
+                        (optional ? "With its game, the page shows the game's texts and links to the other sites."
+                                  : "SparkIV needs the game for the key of the archive.");
+        CancelButton.Content = optional ? "Without game" : "Cancel";
+      }
       HintText.Text = "The folder of a game is asked for once and remembered; it can be changed in the settings.";
 
       ExtendsContentIntoTitleBar = true;
       SetTitleBar(AppTitleBar);
-      Root.Loaded += (sender, args) => TitleBarColors.Apply(this, Root);
+      Root.Loaded += async (sender, args) =>
+      {
+        TitleBarColors.Apply(this, Root);
+        // First start: once, over the game selector, that SparkIV is for offline modding only.
+        await OfflineNotice.ShowIfNeededAsync(Root.XamlRoot);
+      };
       Root.ActualThemeChanged += (sender, args) => TitleBarColors.Apply(this, Root);
 
       string icon = Path.Combine(AppContext.BaseDirectory, "SparkIV.ico");
@@ -71,26 +88,41 @@ namespace SparkIV.WinUI
       AppWindow.Resize(new Windows.Graphics.SizeInt32(560, 520));
       CenterOnScreen();
 
-      foreach (var game in Games.All)
+      // For a file: the games it can be from. An RDR2 archive (RPF8) is only RDR2's; any other file only GTA IV's.
+      System.Collections.Generic.IEnumerable<Game> games = path == null ? Games.All
+                : RageLib.Rdr2.Pc.Rpf8Archive.IsRpf8File(path) ? new[] { Games.Rdr2 }
+                : Games.All.Where(g => g != Games.Rdr2);
+      foreach (var game in games)
       {
         GameList.Children.Add(CreateRow(game));
       }
 
-      Closed += (sender, args) => _result.TrySetResult(null);
+      Closed += (sender, args) =>
+      {
+        _closed = true;
+        _result.TrySetResult(null);
+      };
+    }
+
+    private async Task<GameInstall?> ResultAsync()
+    {
+      Activate();
+      GameInstall? install = await _result.Task;
+      if (!_closed)
+      {
+        Close();
+      }
+      return install;
     }
 
     /// <summary>
     /// Asks for the game of a file. Null if the user cancelled. <paramref name="optional"/>: the file
     /// opens without a game too (a web page), so cancelling is offered as "Without game".
     /// </summary>
-    internal static async Task<GameInstall?> AskAsync(string path, bool optional)
-    {
-      var window = new GameChooserWindow(path, optional);
-      window.Activate();
-      GameInstall? install = await window._result.Task;
-      window.Close();
-      return install;
-    }
+    internal static Task<GameInstall?> AskAsync(string path, bool optional) => new GameChooserWindow(path, optional).ResultAsync();
+
+    /// <summary>Asks which game to open, as OpenIV does when it starts. Null if the window was closed.</summary>
+    internal static Task<GameInstall?> ChooseGameAsync() => new GameChooserWindow(null, optional: true).ResultAsync();
 
     private void CenterOnScreen()
     {
@@ -138,12 +170,15 @@ namespace SparkIV.WinUI
       return grid;
     }
 
-    /// <summary>The icon of the game's exe when the folder of a platform is known, else the short name of the game.</summary>
+    /// <summary>
+    /// The icon of the game's exe when the folder of a platform is known and the exe has one; else (no folder yet, or
+    /// an exe without an icon of its own, as GTA VI's Xbox build) a game controller from Windows' own symbol font.
+    /// </summary>
     private static UIElement CreateTileContent(Game game)
     {
       string? folder = game.Platforms.Select(p => Games.InstallFolder(game, p)).FirstOrDefault(f => f != null);
-      string exe = game == Games.Episodes ? "EFLC.exe" : "GTAIV.exe";
-      if (folder != null && System.IO.File.Exists(Path.Combine(folder, exe)))
+      string exe = game.Executable;
+      if (folder != null && System.IO.File.Exists(Path.Combine(folder, exe)) && HasOwnIcon(Path.Combine(folder, exe)))
       {
         try
         {
@@ -161,20 +196,35 @@ namespace SparkIV.WinUI
         }
         catch (Exception)
         {
-          // Then the name.
+          // Then the controller.
         }
       }
-      return new TextBlock
+      return new FontIcon
       {
-        Text = game.ShortName,
-        FontWeight = FontWeights.SemiBold,
-        FontSize = game.ShortName.Length > 2 ? 16 : 24,
+        Glyph = "",
+        FontSize = 32,
         HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
       };
     }
 
     #endregion
+
+    /// <summary>Whether the file has an icon of its own (ExtractIconEx with index -1 returns the number of icons).</summary>
+    private static bool HasOwnIcon(string path)
+    {
+      try
+      {
+        return ExtractIconExW(path, -1, IntPtr.Zero, IntPtr.Zero, 0) > 0;
+      }
+      catch (Exception)
+      {
+        return true;  // Then as before: whatever Windows gives for it.
+      }
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint ExtractIconExW(string file, int index, IntPtr large, IntPtr small, uint count);
 
     private async Task ChooseAsync(Game game, string platform)
     {

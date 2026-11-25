@@ -60,10 +60,7 @@
 
         <!-- Commands -->
         <CommandBar Grid.Row="1" HorizontalAlignment="Left" DefaultLabelPosition="Right" Background="Transparent" Margin="4,0">
-            <AppBarButton x:Name="OpenGameButton" Label="GTA IV" Click="OpenGame_Click" ToolTipService.ToolTip="Browse the GTA IV game folder">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE7FC;" /></AppBarButton.Icon>
-            </AppBarButton>
-            <AppBarButton x:Name="OpenEpisodesButton" Label="Episodes" Click="OpenEpisodes_Click" ToolTipService.ToolTip="Browse the Episodes from Liberty City (also the Complete Edition)">
+            <AppBarButton x:Name="ChooseGameButton" Label="Choose Game" Click="ChooseGame_Click" ToolTipService.ToolTip="Choose a game and browse its folder">
                 <AppBarButton.Icon><FontIcon Glyph="&#xE7FC;" /></AppBarButton.Icon>
             </AppBarButton>
             <AppBarButton x:Name="OpenArchiveButton" Label="Open archive" Click="OpenArchive_Click" ToolTipService.ToolTip="Open an RPF or IMG archive">
@@ -169,9 +166,9 @@
                     <Grid Padding="12,4,24,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="200" />
-                            <ColumnDefinition Width="170" />
-                            <ColumnDefinition Width="90" />
-                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="260" />
                         </Grid.ColumnDefinitions>
                         <Button x:Name="SortName" Grid.Column="0" Style="{StaticResource ColumnHeaderStyle}" Content="Name" Tag="Name" Click="SortColumn_Click" />
                         <Button x:Name="SortType" Grid.Column="1" Style="{StaticResource ColumnHeaderStyle}" Content="Type" Tag="Type" Click="SortColumn_Click" />
@@ -205,9 +202,9 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" MinWidth="200" />
-                                        <ColumnDefinition Width="170" />
-                                        <ColumnDefinition Width="90" />
-                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="160" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="260" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Orientation="Horizontal" Spacing="10" Padding="8,0">
                                         <FontIcon Glyph="{x:Bind Glyph}" FontSize="16" />

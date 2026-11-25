@@ -56,12 +56,25 @@ namespace RageLib.FileSystem.Common
     }
 
     public bool IsCompressed { get; set; }
-    public int CompressedSize { get; set; }
+    public long CompressedSize { get; set; }
 
-    public int Size { get; set; }
+    public long Size { get; set; }
 
     public bool IsResource { get; set; }
     public ResourceType ResourceType { get; set; }
+
+    /// <summary>Absolute byte offset of the member in its archive (0 if unknown).</summary>
+    public long Offset { get; set; }
+
+    /// <summary>Short free-text detail shown in the file list's detail column.</summary>
+    public string Detail { get; set; } = "";
+
+    /// <summary>A longer, labelled explanation shown in the status bar on selection.</summary>
+    public string DetailLong { get; set; } = "";
+
+    /// <summary>How the member is stored ("zlib", "raw", "nested RPF", …). When
+    /// "zlib", the bytes a viewer receives are already decompressed.</summary>
+    public string Codec { get; set; } = "";
 
     public bool IsCustomData
     {

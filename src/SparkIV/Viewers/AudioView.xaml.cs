@@ -24,21 +24,21 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
-using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using RageLib.Audio;
-using RageLib.Audio.WaveFile;
+using RageLib.GtaVI.Audio;
 using SparkIV.WinUI.Model;
 using VirtualKey = Windows.System.VirtualKey;
 
 namespace SparkIV.WinUI.Viewers
 {
   /// <summary>
-  /// An audio bank (.ivaud): its tracks, playback and export. Waves named NAME_LEFT / NAME_RIGHT
-  /// (/ _CENTRE / _LS / _RS) also play as one stereo, LCR or 5.0 track.
+  /// An audio bank of any game SparkIV reads (GTA IV's .ivaud, GTA VI's .awc): its tracks, playback and
+  /// export. In GTA IV waves named NAME_LEFT / NAME_RIGHT (/ _CENTRE / _LS / _RS) also play as one stereo,
+  /// LCR or 5.0 track.
   /// </summary>
   public sealed partial class AudioView : UserControl, IDisposable
   {
@@ -48,8 +48,7 @@ namespace SparkIV.WinUI.Viewers
     private static double s_volume = 100;
 
     private readonly ViewerContext _context;
-    private readonly AudioFile _file;
-    private readonly AudioPlayer _player = new AudioPlayer();
+    private readonly IAudioBank _bank;
     private readonly DispatcherQueueTimer _timer;
     private readonly List<AudioTrackGroup> _groups = new List<AudioTrackGroup>();
 
@@ -57,23 +56,27 @@ namespace SparkIV.WinUI.Viewers
     private bool _isPlaying;
     private bool _seeking;
     private bool _updatingSlider;
+    private string? _busyNote;  // "Decoding ..." while a track is being prepared
+    private int _loadVersion;
     private string _sortKey = "";
     private bool _ascending = true;
 
-    public AudioView(ViewerContext context, AudioFile file)
+    internal AudioView(ViewerContext context, IAudioBank bank)
     {
       InitializeComponent();
       _context = context;
-      _file = file;
+      _bank = bank;
 
       LoopButton.IsChecked = s_looped;
       DownmixButton.IsChecked = s_downmix;
       VolumeSlider.Value = s_volume;
-      _player.Looped = s_looped;
-      _player.Downmix = s_downmix;
-      _player.Volume = (float)(s_volume / 100);
+      _bank.Looped = s_looped;
+      _bank.Downmix = s_downmix;
+      _bank.Volume = (float)(s_volume / 100);
 
-      ExportAllButton.IsEnabled = file.SupportsMultichannelExport;
+      ExportAllButton.IsEnabled = bank.SupportsMultichannelExport;
+      ExportAllButton.Visibility = bank.SupportsMultichannelExport || bank is IvaudBank ? Visibility.Visible : Visibility.Collapsed;
+      ExportRawButton.Visibility = bank.SupportsRawExport ? Visibility.Visible : Visibility.Collapsed;
 
       // The slider seeks when the mouse lets go of it, not when it is pressed or on every step of a drag.
       // The slider moves its value on the press itself, before a handler on the slider hears of it, so the
@@ -94,9 +97,9 @@ namespace SparkIV.WinUI.Viewers
       _timer.Interval = TimeSpan.FromMilliseconds(100);
       _timer.Tick += (s, e) =>
       {
-        if (_player.HasEnded)
+        if (_bank.HasEnded)
         {
-          _player.Stop();
+          _bank.Stop();
         }
         UpdatePlayback();
       };
@@ -115,12 +118,17 @@ namespace SparkIV.WinUI.Viewers
       _started = true;
       _timer.Start();
 
-      var first = _groups.SelectMany(g => g).FirstOrDefault();
+      var rows = _groups.SelectMany(g => g).ToList();
+      var first = rows.FirstOrDefault(r => r.Track.NotPlayable == null) ?? rows.FirstOrDefault();
       if (first != null)
       {
         TrackList.SelectedItem = first;
-        PlayTrack(first.Track);
+        if (first.Track.NotPlayable == null)
+        {
+          _ = PlayTrackAsync(first.Track);
+        }
       }
+      UpdatePlayback();
       TrackList.Focus(FocusState.Programmatic);
     }
 
@@ -128,39 +136,8 @@ namespace SparkIV.WinUI.Viewers
 
     private void BuildTracks()
     {
-      var groupTracks = AudioTrack.FindChannelGroups(_file);
-      var monoTracks = _file.Select(AudioTrack.FromMono).ToList();
-      var monoOfWave = monoTracks.ToDictionary(t => t.Waves[0]);
-      var grouped = new HashSet<AudioTrack>();
-
       _groups.Clear();
-      foreach (var track in groupTracks)
-      {
-        int count = track.Waves.Length;
-        var group = new AudioTrackGroup(track.Name + "  \u2013  " + track.LayoutName + ", stored as " + count + " mono tracks", isMultichannel: true);
-        group.Add(new AudioTrackRow(track, track.LayoutName + " (" + count + " \u00D7 Mono)", AudioRowKind.Multichannel));
-        // Members in speaker order: L, R, C, LS, RS
-        for (int i = 0; i < count; i++)
-        {
-          if (monoOfWave.TryGetValue(track.Waves[i], out var mono))
-          {
-            group.Add(new AudioTrackRow(mono, "Mono (" + AudioTrack.GetChannelName(track.Channels[i]) + ")", AudioRowKind.Member));
-            grouped.Add(mono);
-          }
-        }
-        _groups.Add(group);
-      }
-
-      var rest = new AudioTrackGroup(groupTracks.Count > 0 ? "Mono tracks" : "Tracks", isMultichannel: false);
-      foreach (var track in monoTracks.Where(t => !grouped.Contains(t)))
-      {
-        rest.Add(new AudioTrackRow(track, "Mono", AudioRowKind.Mono));
-      }
-      if (rest.Count > 0)
-      {
-        _groups.Add(rest);
-      }
-
+      _groups.AddRange(_bank.BuildGroups());
       ShowGroups();
     }
 
@@ -205,34 +182,36 @@ namespace SparkIV.WinUI.Viewers
       TrackList.SelectedItem = selected;
     }
 
-    private AudioTrack? SelectedTrack => (TrackList.SelectedItem as AudioTrackRow)?.Track;
+    private IAudioTrack? SelectedTrack => (TrackList.SelectedItem as AudioTrackRow)?.Track;
 
     // A single click only selects. Playback continues; when nothing is playing, Play starts the selected track.
-    private void TrackList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void TrackList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
       var track = SelectedTrack;
-      if (track != null && track != _player.Track && !_player.IsPlaying && !_player.IsPaused)
+      if (track != null && track != _bank.Track && !_bank.IsPlaying && !_bank.IsPaused && track.NotPlayable == null &&
+          _bank is IvaudBank)
       {
-        _player.Initialize(_file, track);
-        UpdatePlayback();
+        // Ready to play right away (GTA IV's waves decode as they play; others are decoded on Play).
+        await LoadAsync(track);
       }
+      UpdatePlayback();
     }
 
     // Double-click / Enter: play that track from the start.
     private void TrackList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-      if (SelectedTrack is AudioTrack track)
+      if (SelectedTrack is IAudioTrack track)
       {
-        PlayTrack(track);
+        _ = PlayTrackAsync(track);
       }
     }
 
     private void TrackList_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-      if (e.Key == VirtualKey.Enter && SelectedTrack is AudioTrack track)
+      if (e.Key == VirtualKey.Enter && SelectedTrack is IAudioTrack track)
       {
         e.Handled = true;
-        PlayTrack(track);
+        _ = PlayTrackAsync(track);
       }
     }
 
@@ -252,40 +231,81 @@ namespace SparkIV.WinUI.Viewers
 
     private void Play_Click(object sender, RoutedEventArgs e) => TogglePlay();
 
-    private void TogglePlay()
+    private async void TogglePlay()
     {
-      if (_player.IsPlaying)
+      if (_bank.IsPlaying)
       {
-        _player.Pause();
+        _bank.Pause();
         UpdatePlayback();
         return;
       }
 
       // Stopped: start the selected track (paused playback just resumes).
-      if (!_player.IsPaused && SelectedTrack is AudioTrack selected && selected != _player.Track)
+      if (!_bank.IsPaused && SelectedTrack is IAudioTrack selected && selected != _bank.Track)
       {
-        _player.Initialize(_file, selected);
+        if (!await LoadAsync(selected))
+        {
+          return;
+        }
       }
       StartPlayback();
     }
 
     private void Stop_Click(object sender, RoutedEventArgs e)
     {
-      _player.Stop();
+      _bank.Stop();
       UpdatePlayback();
     }
 
-    private void PlayTrack(AudioTrack track)
+    private async Task PlayTrackAsync(IAudioTrack track)
     {
-      _player.Initialize(_file, track);
-      StartPlayback();
+      if (await LoadAsync(track))
+      {
+        StartPlayback();
+      }
+    }
+
+    /// <summary>Makes the track the one played; false if it can't be (shown in the transport).</summary>
+    private async Task<bool> LoadAsync(IAudioTrack track)
+    {
+      if (track.NotPlayable != null)
+      {
+        _busyNote = null;
+        NowPlaying.Text = track.NotPlayable;
+        return false;
+      }
+      int version = ++_loadVersion;
+      _bank.Stop();
+      _busyNote = "Decoding " + track.Name + " …";
+      UpdatePlayback();
+      try
+      {
+        await _bank.LoadAsync(track);
+        return version == _loadVersion;  // Another track was chosen meanwhile.
+      }
+      catch (Exception ex)
+      {
+        if (version == _loadVersion)
+        {
+          ShowPlayError(ex);
+        }
+        return false;
+      }
+      finally
+      {
+        if (version == _loadVersion)
+        {
+          _busyNote = null;
+          UpdatePlayback();
+        }
+      }
     }
 
     private void StartPlayback()
     {
       try
       {
-        _player.Play();
+        _bank.Play();
       }
       catch (Exception ex)
       {
@@ -328,9 +348,13 @@ namespace SparkIV.WinUI.Viewers
 
     private void Seek()
     {
+      if (_bank.Track == null)
+      {
+        return;
+      }
       try
       {
-        _player.Seek(TimeSpan.FromMilliseconds(PositionSlider.Value));
+        _bank.Seek(TimeSpan.FromMilliseconds(PositionSlider.Value));
       }
       catch (Exception ex)
       {
@@ -342,7 +366,7 @@ namespace SparkIV.WinUI.Viewers
     private void Loop_Click(object sender, RoutedEventArgs e)
     {
       s_looped = LoopButton.IsChecked == true;
-      _player.Looped = s_looped;
+      _bank.Looped = s_looped;
     }
 
     private void Downmix_Click(object sender, RoutedEventArgs e)
@@ -350,7 +374,7 @@ namespace SparkIV.WinUI.Viewers
       s_downmix = DownmixButton.IsChecked == true;
       try
       {
-        _player.Downmix = s_downmix;
+        _bank.Downmix = s_downmix;
       }
       catch (Exception ex)
       {
@@ -362,15 +386,15 @@ namespace SparkIV.WinUI.Viewers
     private void VolumeSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
       s_volume = e.NewValue;
-      _player.Volume = (float)(e.NewValue / 100);
+      _bank.Volume = (float)(e.NewValue / 100);
       ToolTipService.SetToolTip(VolumeSlider, "Volume: " + (int)e.NewValue + " %");
     }
 
     private void UpdatePlayback()
     {
-      var track = _player.Track;
-      TimeSpan length = _player.Length;
-      TimeSpan position = _player.Position;
+      var track = _bank.Track;
+      TimeSpan length = _bank.Length;
+      TimeSpan position = _bank.Position;
 
       _updatingSlider = true;
       double max = Math.Max(1, length.TotalMilliseconds);
@@ -386,18 +410,29 @@ namespace SparkIV.WinUI.Viewers
       }
       _updatingSlider = false;
 
-      bool playing = _player.IsPlaying;
+      bool playing = _bank.IsPlaying;
       if (playing != _isPlaying)
       {
         _isPlaying = playing;
-        PlayIcon.Glyph = playing ? "\uE769" : "\uE768";
+        PlayIcon.Glyph = playing ? "" : "";
         ToolTipService.SetToolTip(PlayButton, playing ? "Pause (Space)" : "Play (Space)");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(PlayButton, playing ? "Pause" : "Play");
       }
 
-      DownmixButton.IsEnabled = track != null && track.Waves.Length > 2;
-      NowPlaying.Text = track == null ? "" : track.Name + "   \u00B7   " + track.LayoutName + ", " + track.SamplesPerSecond + " Hz"
-                                             + (playing ? "" : _player.IsPaused ? "   \u00B7   paused" : "");
+      DownmixButton.IsEnabled = track != null && track.ChannelCount > 2 && _bank is IvaudBank;
+      if (_busyNote != null)
+      {
+        NowPlaying.Text = _busyNote;
+      }
+      else if (track != null)
+      {
+        NowPlaying.Text = track.Name + "   ·   " + track.LayoutName + ", " + track.SamplesPerSecond + " Hz"
+                          + (playing ? "" : _bank.IsPaused ? "   ·   paused" : "");
+      }
+      else
+      {
+        NowPlaying.Text = SelectedTrack?.NotPlayable ?? "";
+      }
     }
 
     private void ShowPlayError(Exception ex)
@@ -418,29 +453,24 @@ namespace SparkIV.WinUI.Viewers
 
     private async void ExportWave_Click(object sender, RoutedEventArgs e)
     {
-      if (SelectedTrack is not AudioTrack track)
+      if (SelectedTrack is not IAudioTrack track)
       {
         _context.ShowMessage("Nothing selected", "Select the track to export.", true);
         return;
       }
+      if (track.NotPlayable != null)
+      {
+        _context.ShowMessage("Can't convert " + track.Name, track.NotPlayable, true);
+        return;
+      }
 
-      string? path = await ViewerPages.PickSaveFileAsync(_context.Window, track.Name + ".wav", ".wav");
+      string? path = await ViewerPages.PickSaveFileAsync(_context.Window, SafeFileName(track.Name) + ".wav", ".wav");
       if (path == null)
       {
         return;
       }
 
-      await ExportAsync(path, stream =>
-      {
-        if (track.IsMultichannel)
-        {
-          WaveExport.ExportChannels(_file, track, stream);
-        }
-        else
-        {
-          WaveExport.Export(_file, track.Waves[0], stream);
-        }
-      });
+      await ExportAsync(path, stream => _bank.ExportWave(track, stream));
     }
 
     private async void ExportAll_Click(object sender, RoutedEventArgs e)
@@ -448,15 +478,41 @@ namespace SparkIV.WinUI.Viewers
       string? path = await ViewerPages.PickSaveFileAsync(_context.Window, Path.GetFileNameWithoutExtension(_context.File.Name) + ".wav", ".wav");
       if (path != null)
       {
-        await ExportAsync(path, stream => WaveExport.ExportMultichannel(_file, stream));
+        await ExportAsync(path, stream => _bank.ExportAll(stream));
+      }
+    }
+
+    private async void ExportRaw_Click(object sender, RoutedEventArgs e)
+    {
+      if (SelectedTrack is not IAudioTrack track)
+      {
+        _context.ShowMessage("Nothing selected", "Select the track to export.", true);
+        return;
+      }
+      string? path = await ViewerPages.PickSaveFileAsync(_context.Window, SafeFileName(track.Name) + ".bin", ".bin");
+      if (path == null)
+      {
+        return;
+      }
+      try
+      {
+        await System.IO.File.WriteAllBytesAsync(path, _bank.ExportRaw(track));
+        _context.ShowMessage("Exported", path + "   ·   the audio data as it is stored", false);
+      }
+      catch (Exception ex)
+      {
+        _context.ShowMessage("Could not export the track", ex.Message, true);
       }
     }
 
     private async Task ExportAsync(string path, Action<Stream> write)
     {
-      // Playback and export read the same sound bank stream.
-      _player.Stop();
-      UpdatePlayback();
+      // Playback and export may read the same sound bank stream.
+      if (_bank is IvaudBank)
+      {
+        _bank.Stop();
+        UpdatePlayback();
+      }
       try
       {
         await Task.Run(() =>
@@ -479,30 +535,46 @@ namespace SparkIV.WinUI.Viewers
       if (path != null)
       {
         await System.IO.File.WriteAllBytesAsync(path, _context.Data);
-        _context.ShowMessage("Exported", path + ". To put an edited version back, use Import in the main window; the file name must stay \"" + name + "\".", false);
+        _context.ShowMessage("Exported", path + (_bank is IvaudBank
+          ? ". To put an edited version back, use Import in the main window; the file name must stay \"" + name + "\"."
+          : ""), false);
       }
+    }
+
+    private static string SafeFileName(string name)
+    {
+      foreach (char c in Path.GetInvalidFileNameChars())
+      {
+        name = name.Replace(c, '_');
+      }
+      return name;
     }
 
     #endregion
 
     public void Dispose()
     {
+      _loadVersion++;
       _timer.Stop();
-      _player.Stop();
-      _file.Dispose();
+      _bank.Dispose();
     }
   }
 
-  /// <summary>Audio banks (.ivaud).</summary>
+  /// <summary>Audio banks: GTA IV's .ivaud, GTA VI's .awc.</summary>
   internal sealed class AudioViewer : IViewer
   {
     public object Load(RageLib.FileSystem.Common.File file, byte[] data)
     {
+      // GTA VI audio wave containers start with "ADAT".
+      if (data.Length >= 4 && data[0] == 'A' && data[1] == 'D' && data[2] == 'A' && data[3] == 'T')
+      {
+        return new AwcBank(AwcFile.Parse(data), data);
+      }
       var audio = new AudioFile();
       audio.Open(new MemoryStream(data));
-      return audio;
+      return new IvaudBank(audio);
     }
 
-    public FrameworkElement CreateView(ViewerContext context, object loaded) => new AudioView(context, (AudioFile)loaded);
+    public FrameworkElement CreateView(ViewerContext context, object loaded) => new AudioView(context, (IAudioBank)loaded);
   }
 }

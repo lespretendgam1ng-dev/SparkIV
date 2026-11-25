@@ -62,6 +62,21 @@ third field of its `.ide` line) **times the LOD view distance** of the graphics 
 - **Open:** in the same frame `LOD_mhb_cablebas` (also 550 m) 843 m off is not drawn, its district's super LOD
   instead. With 2.0 it would be in reach (1100 m), so another rule decides there (possibly streaming).
 
+### Timed distant versions (the lit windows at night) without the view distance (#138, 2026-11-10)
+
+The night windows' distant versions (`tobj`: `LOD_22_00_NL_MH1`, `LOD_21C_NL_MH1`, `LOD_N13_NL_MH1`, … 700 m,
+`gta_emissivenight` with `emissiveMultiplier` 16, textures of `mh_emissive_lods.wtd`) and their district's
+`SLOD_NL_03/04/07_MH7` (3000 m, multiplier 9, one 128 × 128 DXT1 of flat colour blocks) - in `GTAIV.3.trace` intro
+s2 f352.75 (the frame ending at call 19415728) the game draws the SLODs 780 m and more off and none of the LOD_*_NL
+there (its night glow draws, PS 0x2c472260 from 19412294 to 19414679: multipliers 7 to 30, never 16; the bound
+texture of the windows at 1600,352 is SLOD_NL's, its mean 0.634 / 0.602 / 0.307 against 0.630 / 0.599 / 0.304).
+With the factor 2.0 (1400 m) SparkIV drew the LOD_*_NL there: lit windows of photos with alpha (mean alpha 0.56), so the
+skyline's windows came out at half the game's light (1600,352 before the fog: game 4.54 / 5.15 / 3.52, SparkIV 1.98 /
+2.62 / 2.57 in the game's units). SparkIV now takes a timed distant version only up to its `.ide` distance; the
+window there is 3.59 / 4.52 / 3.55 (after the fog; game 3.41 / 4.29 / 3.96). Why the game leaves the factor off for
+them is not found in GTAIV.exe (the rule is from this frame); the distance is from the location's origin, as for the
+others. Status: **used** (`CutsceneLocation`, `TimedFarWithViewDistance` / cutgen `D3D12TIMEDFARVIEW=1` for the old way).
+
 ### What the cutscene camera cuts off, and which version of a group is drawn
 
 Found by leaving out draws of the same frame (`d3dretrace --ignore-calls`): the buildings behind the cranes that

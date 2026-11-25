@@ -82,6 +82,12 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     public List<string> ModelNames { get; } = new List<string>();
     public List<LocationObject> Objects { get; } = new List<LocationObject>();
 
+    /// <summary>
+    /// GTA IV (PC): the names of the models that are traffic lights (the .ide's special attribute 3), whose lights the
+    /// game draws by the traffic lights' state (CutsceneLights' traffic coronas).
+    /// </summary>
+    public HashSet<string> TrafficLightModels { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The rooms of the interiors placed there (but their "limbo", the shell around the rooms).</summary>
     public List<LocationRoom> Rooms { get; } = new List<LocationRoom>();
 
@@ -142,6 +148,19 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     /// </summary>
     public byte[]? Corona { get; private set; }
 
+    /// <summary>
+    /// GTA IV (PC): the map's particle effects that always play (the .ide files' 2dfx of type 1 with trigger 0, #118) on
+    /// placements within <see cref="ParticleRadius"/> of the scene's origin: the effect's tag (entityFx.dat names its
+    /// rule), its place in the scene, its turn, its scale (the 2dfx line's, 0.5 on the intro's ship).
+    /// </summary>
+    public List<LocationParticle> Particles { get; } = new List<LocationParticle>();
+
+    /// <summary>The particle effects of <see cref="Particles"/> that SparkIV draws (resolved and simulated), or null.</summary>
+    public CutsceneParticles? Effects { get; private set; }
+
+    /// <summary>How far round the scene's origin the map's particle effects are taken (their 2dfx draw distance is 100 m).</summary>
+    public const float ParticleRadius = 250;
+
     // The placements and models of a game's maps, read once per game folder while SparkIV runs.
     private sealed class MapIndex
     {
@@ -180,9 +199,26 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       /// </summary>
       public Dictionary<string, uint> Hours { get; } = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
 
+      /// <summary>
+      /// GTA IV (PC): the objects' special attribute (the objs line's fifth field), by name, where it isn't 0. 3: a
+      /// traffic light (traffic.ide's BM_NYtraflite*, BM_NYpedcross*; GTAIV.exe draws such an object's lights by the
+      /// traffic lights' state, FUN_00d208f0 on model info +0x40 top byte 3).
+      /// </summary>
+      public Dictionary<string, int> Specials { get; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
       /// <summary>The archive each dictionary (.wdd) is in, by its name.</summary>
       public Dictionary<string, string> DictionaryArchiveOf { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+      /// <summary>
+      /// GTA IV (PC): the models' particle effects (the .ide files' 2dfx lines of type 1: model, offset, 1, turn x y z w,
+      /// tag, trigger, attach, scale, draw distance, flags, r, g, b; docs/GtaIV/Pc/formats/wpfl.md), by model name.
+      /// </summary>
+      public Dictionary<string, List<(Vector3 Offset, Quaternion Turn, string Tag, int Trigger, float Scale)>> ParticleFx { get; } =
+        new Dictionary<string, List<(Vector3, Quaternion, string, int, float)>>(StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>A map particle effect of the scene (see <see cref="Particles"/>).</summary>
+    public sealed record LocationParticle(string Tag, Vector3 At, Quaternion Turn, float Scale);
 
     /// <summary>
     /// An interior: its objects in the order the .ide lists them, placed in the interior as the map places
@@ -296,6 +332,13 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           }
         }
       }
+      foreach (var (special, value) in index.Specials)
+      {
+        if (value == 3)
+        {
+          location.TrafficLightModels.Add(special);
+        }
+      }
       float Bound(string name) => index.Sizes.TryGetValue(name, out var size) ? size.Radius : 0;
       float Distance(Vector3 position) => new Vector2(position.X - origin.X, position.Y - origin.Y).Length();
       bool AtHour(string name) => !index.Hours.TryGetValue(name, out uint shown) || (shown & (1u << Math.Clamp(hour, 0, 23))) != 0;
@@ -370,7 +413,11 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
           // LodViewDistance), if any of it lies within the scene's draw distance (the camera's far plane cuts the
           // rest): bc_3 s2 f786 (GTAIV.1.trace, draws 136285573/579) shows SupLod_BkN_08 and _03, centres 779
           // and 844 m off, with the far plane at 780 m.
-          float draw = index.Sizes.TryGetValue(p.Name, out var size) ? size.Draw * LodViewDistance : farRadius;
+          // GTA IV (PC): a timed far version (tobj: the lit windows at night, LOD_*_NL_*) only up to its .ide distance,
+          // without the LOD view distance (#138): GTAIV.3.trace intro s2 f352.75 (the frame ending at call 19415728) draws
+          // none of the LOD_*_NL (700 m, emissive 16) 780 m and more off but their district's SLOD_NL (emissive 9).
+          float factor = index.Hours.ContainsKey(p.Name) && !TimedFarWithViewDistance ? 1 : LodViewDistance;
+          float draw = index.Sizes.TryGetValue(p.Name, out var size) ? size.Draw * factor : farRadius;
           return Distance(p.Position) <= draw && Distance(p.Position) - Bound(p.Name) <= farRadius;
         }
         var detail = new Dictionary<int, bool>();
@@ -633,6 +680,33 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
         // Then no coronas.
       }
       log?.Step("location: water and sky", location.Water.Count / 4 + " water quads");
+      // GTA IV (PC): the map's particle effects that always play (trigger 0) near the scene (#118). The effect's place:
+      // the placement's turned as a model's (conjugated) applied to the 2dfx offset.
+      foreach (int i in world)
+      {
+        var p = index.Placements[i];
+        if (!index.ParticleFx.TryGetValue(p.Name, out var effects) || Distance(p.Position) > ParticleRadius)
+        {
+          continue;
+        }
+        var turn = Quaternion.Conjugate(p.Rotation);
+        foreach (var e in effects)
+        {
+          if (e.Trigger == 0)
+          {
+            location.Particles.Add(new LocationParticle(e.Tag, p.Position - origin + Vector3.Transform(e.Offset, turn), Quaternion.Normalize(turn * e.Turn), e.Scale));
+          }
+        }
+      }
+      try
+      {
+        location.Effects = new CutsceneParticles(location, folder, hour);
+      }
+      catch (Exception)
+      {
+        // Then no particles.
+      }
+      log?.Step("location: particle effects", location.Effects == null ? "none" : location.Effects.Count + " of " + location.Particles.Count + " drawn");
       return location;
     }
 
@@ -896,6 +970,9 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     // .ide 550 m) are drawn in the game's frame (s2 f786), here only with this factor.
     private const float LodViewDistance = 2.0f;
 
+    /// <summary>The timed far versions also up to their .ide distance x the LOD view distance (as before #138). For comparisons.</summary>
+    public static bool TimedFarWithViewDistance { get; set; }
+
     /// <summary>
     /// The map's files of a kind under <paramref name="sub"/> (pc\data ...) as the game loads them. An episode
     /// (TLAD, TBoGT: a content.dat in its folder, GTA IV's folder above it) only adds to GTA IV's city: its
@@ -941,6 +1018,56 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
       }
     }
 
+    // GTA IV (PC): an .ide file's particle effects (its 2dfx lines of type 1, see MapIndex.ParticleFx; #118). Each model's
+    // lines once (an episode's .ide repeats GTA IV's).
+    private static void ReadParticleFx(string path, Dictionary<string, List<(Vector3 Offset, Quaternion Turn, string Tag, int Trigger, float Scale)>> into)
+    {
+      var inv = System.Globalization.CultureInfo.InvariantCulture;
+      bool in2dfx = false;
+      try
+      {
+        foreach (var raw in System.IO.File.ReadLines(path))
+        {
+          var line = raw.Trim();
+          if (line.Equals("2dfx", StringComparison.OrdinalIgnoreCase))
+          {
+            in2dfx = true;
+            continue;
+          }
+          if (line.Equals("end", StringComparison.OrdinalIgnoreCase))
+          {
+            in2dfx = false;
+            continue;
+          }
+          if (!in2dfx)
+          {
+            continue;
+          }
+          var f = line.Split(',');
+          if (f.Length < 13 || f[4].Trim() != "1")
+          {
+            continue;
+          }
+          float F(int k) => float.TryParse(f[k].Trim(), System.Globalization.NumberStyles.Float, inv, out float v) ? v : 0;
+          var entry = (new Vector3(F(1), F(2), F(3)), new Quaternion(F(5), F(6), F(7), F(8)), f[9].Trim(),
+                       int.TryParse(f[10].Trim(), out int trigger) ? trigger : -1, F(12));
+          string model = f[0].Trim();
+          if (!into.TryGetValue(model, out var list))
+          {
+            into[model] = list = new List<(Vector3, Quaternion, string, int, float)>();
+          }
+          if (!list.Contains(entry))
+          {
+            list.Add(entry);
+          }
+        }
+      }
+      catch (Exception)
+      {
+        // An unreadable .ide: no effects from it.
+      }
+    }
+
     private static MapIndex IndexOf(string folder)
     {
       lock (Gate)
@@ -954,7 +1081,8 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
         var nameOf = new Dictionary<uint, string>();
         foreach (var ide in MapFiles(folder, Path.Combine("pc", "data"), "*.ide", new HashSet<string>()))
         {
-          ReadIde(ide, nameOf, index.Interiors, index.Sizes, index.DictionaryOf, index.Hours);
+          ReadIde(ide, nameOf, index.Interiors, index.Sizes, index.DictionaryOf, index.Hours, index.Specials);
+          ReadParticleFx(ide, index.ParticleFx);
         }
         var looseStart = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         {
@@ -1035,7 +1163,7 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     /// </summary>
     private static void ReadIde(string path, Dictionary<uint, string> nameOf, Dictionary<string, Interior> interiors,
                                 Dictionary<string, (float Draw, float Radius)> sizes, Dictionary<string, string> dictionaryOf,
-                                Dictionary<string, uint> hours)
+                                Dictionary<string, uint> hours, Dictionary<string, int> specials)
     {
       static float F(string s) => float.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture);
       string? section = null;
@@ -1097,6 +1225,10 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
             float.TryParse(fields[14 + shift], NumberStyles.Float, CultureInfo.InvariantCulture, out float bound))
         {
           sizes.TryAdd(fields[0], (draw, bound));
+          if (int.TryParse(fields[4 + shift], NumberStyles.Integer, CultureInfo.InvariantCulture, out int special) && special != 0)
+          {
+            specials.TryAdd(fields[0], special);
+          }
           if (fields.Length >= 16 + shift && fields[15 + shift].Length > 0 && !fields[15 + shift].Equals("null", StringComparison.OrdinalIgnoreCase))
           {
             dictionaryOf.TryAdd(fields[0], fields[15 + shift]);
