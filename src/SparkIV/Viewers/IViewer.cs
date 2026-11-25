@@ -117,6 +117,8 @@ namespace SparkIV.WinUI.Viewers
       ByExtension[".wtd"] = textures;
       ByExtension[".ztd"] = textures;
       ByExtension[".dds"] = textures;  // also the textures of GTA VI's texture pools (.ttpf)
+      // GTA VI's shader databases (members whose first bytes are "SGD5", in shaders.rpf).
+      ByExtension[".sgd5"] = new ShaderDatabaseViewer();
       ByExtension[".whm"] = new WebPageViewer();
       ByExtension[".wad"] = new AnimationViewer();
       // The viewers that only know GTA IV (PC)'s formats and rules (cutscenes, collision). Another game or

@@ -477,6 +477,13 @@ namespace RageLib.FileSystem
       if (raw.Length >= 2 && IsZlibHeader(raw[0], raw[1]))
       {
         byte[] inflated = Inflate(raw, Math.Max(e.UncompressedSize, 1) + 16);
+        // Large members are a run of zlib streams (64 KB each, decoded); the first one alone is short.
+        if (inflated != null && inflated.Length < e.UncompressedSize)
+        {
+          byte[] joined = Rpf9Resource.Unpack(raw, e.UncompressedSize, 0);
+          if (joined != null)
+            return joined;
+        }
         if (inflated != null && inflated.Length > 0)
           return inflated;
       }
@@ -545,7 +552,7 @@ namespace RageLib.FileSystem
       if (head[0] == 'A' && head[1] == 'D' && head[2] == 'A' && head[3] == 'T') return new Sniff(".awc", "audio bank (ADAT)", true);
       if (head[0] == 'K' && head[1] == 'B' && head[2] == '2') return new Sniff(".bk2", "Bink 2 video", true);
       if (head[0] == 'B' && head[1] == 'I' && head[2] == 'K') return new Sniff(".bik", "Bink video", true);
-      if (head[0] == 'S' && head[1] == 'G' && head[2] == 'D' && head[3] == '5') return new Sniff(".bin", "shader container (SGD5)", false);
+      if (head[0] == 'S' && head[1] == 'G' && head[2] == 'D' && head[3] == '5') return new Sniff(".sgd5", "shader database (SGD5)", true);
 
       if (!e.IsResource && IsZlibHeader(head[0], head[1]))
       {

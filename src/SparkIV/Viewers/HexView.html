@@ -89,7 +89,13 @@
   const rowsEl = document.getElementById("rows");
   const space = document.getElementById("space");
 
-  let data = new Uint8Array(0);
+  // The file's bytes come from SparkIV in blocks, as they are shown (a file of hundreds of MB would not fit
+  // into one message); a bounded number of blocks is kept.
+  const BLOCK = 65536;
+  const MAX_BLOCKS = 512;      // 32 MB
+  const blocks = new Map();    // block index -> Uint8Array, in the order they came
+  const pending = new Set();
+  let length = 0;
   let rowCount = 1;
   let firstRow = 0;          // First row on screen
   let visible = 1;      // Rows that fit on screen
@@ -109,15 +115,37 @@
     head.innerHTML = h + "</span>";
   }
 
-  function setData(base64) {
-    const raw = atob(base64);
-    data = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
-    rowCount = Math.max(1, Math.ceil(data.length / 16));
+  function setSize(size) {
+    length = size;
+    blocks.clear();
+    pending.clear();
+    rowCount = Math.max(1, Math.ceil(length / 16));
     caret = anchor = 0;
     layout();
     scrollToRow(0);
     report();
+  }
+
+  function setBlock(index, base64) {
+    pending.delete(index);
+    const raw = atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    blocks.set(index, bytes);
+    while (blocks.size > MAX_BLOCKS) blocks.delete(blocks.keys().next().value);
+    render();
+  }
+
+  // The byte at i, or undefined while its block is still on its way (then it is asked for).
+  function byteOf(i) {
+    const index = Math.floor(i / BLOCK);
+    const block = blocks.get(index);
+    if (block) return block[i - index * BLOCK];
+    if (!pending.has(index)) {
+      pending.add(index);
+      post({ type: "block", index: index });
+    }
+    return undefined;
   }
 
   // --- Scrolling: the scroll bar position maps to the first row on screen ---
@@ -187,12 +215,13 @@
       for (let c = 0; c < 16; c++) {
         const i = base + c;
         let cls = c === 8 ? " g" : "";
-        if (i >= data.length) {
-          parts.push('<span class="b', cls, '"> </span>');
+        const v = i < length ? byteOf(i) : undefined;
+        if (v === undefined) {
+          // Past the end, or not here yet.
+          parts.push('<span class="b', cls, '">', i < length ? "··" : " ", "</span>");
           ascii += '<span class="a"> </span>';
           continue;
         }
-        const v = data[i];
         const inSel = i >= lo && i <= hi && hi > lo;
         const sel = inSel ? " s" : "";
         const cur = i === caret ? (column === "hex" ? " c" : " c2") : "";
@@ -210,7 +239,7 @@
   // --- Caret and selection ---
 
   function moveCaret(to, extend) {
-    caret = Math.max(0, Math.min(data.length - 1, to));
+    caret = Math.max(0, Math.min(length - 1, to));
     if (!extend) anchor = caret;
     const row = Math.floor(caret / 16);
     if (row < firstRow) scrollToRow(row);
@@ -221,7 +250,7 @@
 
   function report() {
     const lo = Math.min(caret, anchor), hi = Math.max(caret, anchor);
-    post({ type: "caret", offset: caret, start: lo, length: data.length ? hi - lo + 1 : 0 });
+    post({ type: "caret", offset: caret, start: lo, length: length ? hi - lo + 1 : 0 });
   }
 
   function byteAt(target) {
@@ -261,7 +290,7 @@
       case "PageUp": to = caret - 16 * visible; break;
       case "PageDown": to = caret + 16 * visible; break;
       case "Home": to = e.ctrlKey ? 0 : caret - caret % 16; break;
-      case "End": to = e.ctrlKey ? data.length - 1 : caret - caret % 16 + 15; break;
+      case "End": to = e.ctrlKey ? length - 1 : caret - caret % 16 + 15; break;
       case "Tab": column = column === "hex" ? "ascii" : "hex"; render(); e.preventDefault(); return;
     }
     if (to !== null) {
@@ -273,7 +302,7 @@
     if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
       anchor = 0;
-      caret = Math.max(0, data.length - 1);
+      caret = Math.max(0, length - 1);
       render();
       report();
     } else if (e.ctrlKey && (e.key === "c" || e.key === "C")) {
@@ -284,8 +313,8 @@
   });
 
   function goTo(offset) {
-    if (!data.length) return;
-    offset = Math.max(0, Math.min(data.length - 1, offset));
+    if (!length) return;
+    offset = Math.max(0, Math.min(length - 1, offset));
     const row = Math.floor(offset / 16);
     caret = anchor = offset;
     scrollToRow(Math.max(0, row - Math.floor(visible / 3)));
@@ -306,7 +335,8 @@
   if (window.chrome && chrome.webview) {
     chrome.webview.addEventListener("message", e => {
       const m = e.data;
-      if (m.type === "data") setData(m.base64);
+      if (m.type === "size") setSize(m.length);
+      else if (m.type === "block") setBlock(m.index, m.base64);
       else if (m.type === "goto") goTo(m.offset);
       else if (m.type === "theme") setTheme(m.dark, m.selection);
     });

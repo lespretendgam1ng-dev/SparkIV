@@ -2,6 +2,12 @@
 
 Versions follow [Semantic Versioning](docs/versioning.md); 1.0 will be the first version that fully supports GTA IV (PC). SparkIV shows this file in Settings → About, and after an update the part of the new version.
 
+## v0.9.0-alpha.8 – 2026-11-25
+
+- GTA VI: the shader databases in `shaders.rpf` (`.sgd5`) open in a new viewer: every shader with its stage, shader model, size and hash, and the effects with their techniques and the shaders of each pass. Shaders export as `.dxbc` files (DXBC containers with DXIL, e.g. for `dxc -dumpbin`), one, several or all at once, with the effects as a text file.
+- The hex view opens large files (hundreds of MB) right away: it loads the part shown.
+- GTA VI: large compressed files (such as the shader pack in `shaders.rpf`) unpack completely; only their first 64 KB came before.
+
 ## v0.9.0-alpha.7 – 2026-11-25
 
 - New (experimental, read-only): **Red Dead Redemption 2** (PC). SparkIV opens its RPF8 archives with the file names of the RAGE-StringsDatabase; a one-time setup assistant reads the archives' keys from the running game and keeps them on your PC.

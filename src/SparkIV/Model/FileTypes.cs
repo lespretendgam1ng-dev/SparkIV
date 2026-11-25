@@ -182,6 +182,7 @@ namespace SparkIV.WinUI.Model
       Add("Text and Data", 8, TextGlyph, ".zldbmt", "Text database (subtitles)");
       Add("Text and Data", 8, TextGlyph, ".psin", "Parser metadata (PSIN)");
       Add("Shaders and Effects", 9, ShaderGlyph, ".zpt", "Particle effects");
+      Add("Shaders and Effects", 9, ShaderGlyph, ".sgd5", "Shader database");
       Add("Videos and Documents", 11, VideoGlyph, ".bik", "Bink Video");
     }
 

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SparkIV
+  Copyright (C) 2026  reditec
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<UserControl
+    x:Class="SparkIV.WinUI.Viewers.ShaderDatabaseView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:SparkIV.WinUI.Viewers">
+
+    <Grid RowSpacing="6">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <CommandBar HorizontalAlignment="Left" DefaultLabelPosition="Right" Background="Transparent">
+            <AppBarElementContainer VerticalContentAlignment="Center">
+                <ComboBox x:Name="StageBox" MinWidth="130" Margin="0,0,8,0" SelectedIndex="0" SelectionChanged="Filter_Changed"
+                          ToolTipService.ToolTip="Show the shaders of one stage" />
+            </AppBarElementContainer>
+            <AppBarElementContainer VerticalContentAlignment="Center">
+                <TextBox x:Name="FilterBox" Width="220" Margin="0,0,8,0" PlaceholderText="Filter by name" TextChanged="Filter_Changed" />
+            </AppBarElementContainer>
+            <AppBarButton x:Name="ExportSelectedButton" Label="Export selected" Click="ExportSelected_Click" IsEnabled="False"
+                          ToolTipService.ToolTip="Save the selected shaders as DXBC/DXIL containers (.dxbc)">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE74E;" /></AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton Label="Export all" Click="ExportAll_Click"
+                          ToolTipService.ToolTip="Save every shader as a .dxbc file (one folder per stage) and the effects as effects.txt">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE8B7;" /></AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarSeparator />
+            <AppBarButton Label="Export original" Click="ExportOriginal_Click" ToolTipService.ToolTip="Save the file exactly as it is in the archive">
+                <AppBarButton.Icon><FontIcon Glyph="&#xEDE1;" /></AppBarButton.Icon>
+            </AppBarButton>
+        </CommandBar>
+
+        <Pivot Grid.Row="1" x:Name="Tabs">
+            <PivotItem x:Name="ShadersTab" Header="Shaders">
+                <Border CornerRadius="{ThemeResource OverlayCornerRadius}" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid Padding="12,4,24,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="260" />
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="160" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{StaticResource ColumnHeaderStyle}" Content="Name" Tag="Name" Click="Sort_Click" />
+                            <Button Grid.Column="1" Style="{StaticResource ColumnHeaderStyle}" Content="Stage" Tag="Stage" Click="Sort_Click" />
+                            <Button Grid.Column="2" Style="{StaticResource ColumnHeaderStyle}" Content="Model" Tag="Model" Click="Sort_Click" />
+                            <Button Grid.Column="3" Style="{StaticResource ColumnHeaderStyle}" Content="Size" Tag="Size" Click="Sort_Click" HorizontalContentAlignment="Right" />
+                            <Button Grid.Column="4" Style="{StaticResource ColumnHeaderStyle}" Content="Hash" Tag="Hash" Click="Sort_Click" />
+                        </Grid>
+                        <ListView x:Name="ShaderList" Grid.Row="1" SelectionMode="Extended" SelectionChanged="ShaderList_SelectionChanged"
+                                  DoubleTapped="ShaderList_DoubleTapped">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                    <Setter Property="MinHeight" Value="30" />
+                                    <Setter Property="Padding" Value="12,0" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="local:ShaderRow">
+                                    <Grid ToolTipService.ToolTip="Double-click to export as .dxbc">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="260" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="100" />
+                                            <ColumnDefinition Width="160" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{x:Bind Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Padding="8,0" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Stage}" VerticalAlignment="Center" Padding="8,0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Model}" VerticalAlignment="Center" Padding="8,0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="3" Text="{x:Bind SizeText}" VerticalAlignment="Center" HorizontalAlignment="Right" Padding="8,0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="4" Text="{x:Bind HashText}" VerticalAlignment="Center" Padding="8,0" FontFamily="Cascadia Mono, Consolas, Courier New" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+            </PivotItem>
+
+            <PivotItem x:Name="EffectsTab" Header="Effects">
+                <Grid ColumnSpacing="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border CornerRadius="{ThemeResource OverlayCornerRadius}" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <ListView x:Name="EffectList" SelectionMode="Single" SelectionChanged="EffectList_SelectionChanged">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="local:EffectRow">
+                                    <StackPanel Padding="0,4">
+                                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{x:Bind Detail}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+                    <Border Grid.Column="1" CornerRadius="{ThemeResource OverlayCornerRadius}" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <ScrollViewer Padding="16,12" HorizontalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="EffectText" IsTextSelectionEnabled="True" FontFamily="Cascadia Mono, Consolas, Courier New" FontSize="12.5" />
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </PivotItem>
+        </Pivot>
+
+        <Grid Grid.Row="2" Margin="4,0,4,0">
+            <TextBlock x:Name="InfoText" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+            <ProgressRing x:Name="Working" IsActive="False" Width="20" Height="20" HorizontalAlignment="Right" />
+        </Grid>
+    </Grid>
+</UserControl>

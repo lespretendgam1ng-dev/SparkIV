@@ -100,8 +100,22 @@ namespace SparkIV.WinUI.Viewers
         case "ready":
           _pageReady = true;
           Post(ViewerPages.Theme(this));
-          Post(new { type = "data", base64 = Convert.ToBase64String(_data) });
+          // Only the size: the page asks for the blocks it shows (one message can't carry a file of hundreds of MB).
+          Post(new { type = "size", length = _data.Length });
           Working.IsActive = false;
+          break;
+
+        case "block":
+          {
+            const int Block = 65536;  // As in HexView.html
+            int index = root.GetProperty("index").GetInt32();
+            long start = (long)index * Block;
+            if (index >= 0 && start < _data.Length)
+            {
+              int count = (int)Math.Min(Block, _data.Length - start);
+              Post(new { type = "block", index, base64 = Convert.ToBase64String(_data, (int)start, count) });
+            }
+          }
           break;
 
         case "caret":
