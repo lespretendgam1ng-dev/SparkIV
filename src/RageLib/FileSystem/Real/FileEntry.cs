@@ -92,9 +92,9 @@ namespace RageLib.FileSystem.Real
       get { return _file.FullName; }
     }
 
-    public int Size
+    public long Size
     {
-      get { return (int)_file.Length; }
+      get { return _file.Length; }
     }
 
     public byte[] GetData()

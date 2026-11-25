@@ -1,0 +1,39 @@
+SparkIV - notice on use
+=======================
+
+This notice is not part of the license. SparkIV is free software under the GNU General Public License,
+version 3 or (at your option) any later version; see LICENSE (LICENSE.txt next to SparkIV.exe). This
+notice adds no condition to that license. It states how the authors want SparkIV to be used.
+
+
+OFFLINE MODDING ONLY
+
+This tool may only be used for OFFLINE MODDING.
+
+The authors of SparkIV expressly distance themselves from any use of SparkIV for online modding: for
+changing or gaining an advantage in the online modes of the games (such as GTA Online or Red Dead
+Online), for cheating, or for anything else that affects other players or the games' online services.
+
+
+YOUR OWN COPY OF THE GAMES
+
+SparkIV only works together with your own, legally owned copy of the games. The keys and cipher data
+needed to read the game archives are not part of SparkIV. They are read at run time from the game's own
+executable on your PC (for Red Dead Redemption 2, once from the running game). SparkIV contains no keys,
+cipher tables, IVs or other data taken from the games, only hashes that are used to find and verify this
+data in your own game files.
+
+
+ROCKSTAR GAMES AND SINGLE-PLAYER MODS
+
+SparkIV is an unofficial fan project. It is not affiliated with, endorsed or sponsored by Rockstar Games
+or Take-Two Interactive. Grand Theft Auto, GTA, Red Dead Redemption and related names are trademarks of
+Take-Two Interactive Software, Inc.
+
+In 2017, Rockstar Games stated that Take-Two generally will not take legal action against third-party
+projects for Rockstar's PC games that are single-player, non-commercial and respect the intellectual
+property rights of others. Rockstar added that this is not a license or an endorsement.
+  https://support.rockstargames.com/articles/5NVOAYjcTomO8v6SX2k76k/pc-single-player-mods
+  https://www.rockstargames.com/community-resources/mod-guidelines
+
+SparkIV is provided without any warranty. Back up your game before you change its files.

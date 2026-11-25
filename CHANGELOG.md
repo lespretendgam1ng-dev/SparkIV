@@ -2,6 +2,36 @@
 
 Versions follow [Semantic Versioning](docs/versioning.md); 1.0 will be the first version that fully supports GTA IV (PC). SparkIV shows this file in Settings → About, and after an update the part of the new version.
 
+## v0.10.0-alpha.1 – 2026-11-25
+
+- New (experimental, read-only): **Red Dead Redemption 2** (PC). SparkIV opens its RPF8 archives with the file names of the RAGE-StringsDatabase; a one-time setup assistant reads the archives' keys from the running game and keeps them on your PC.
+- New (experimental, read-only): **Grand Theft Auto VI** (Xbox Series). SparkIV opens its RPF9 archives, also archives inside archives (multi-GB ones read in place). The cipher is read from the game's own executable; nothing secret is part of SparkIV.
+- GTA VI: encrypted files are decrypted and compressed ones unpacked, so XML, metadata (PSIN) and resources open as their real content.
+- GTA VI: file and folder names are recovered from the paths' hashes, using the game's own strings; an optional name list (`file_list.tsv` in the game folder or in `%LocalAppData%\SparkIV`) adds more. Files whose name is not known yet are in an "(unnamed)" folder, with their type as extension.
+- GTA VI: textures (`.ztd`) open in the texture viewer, with all mipmap levels, zoom, channels and PNG export.
+- GTA VI: the texture pools (`data\ttdb\*.ttpf`) open like a folder: every texture as a `.dds` file that opens in the texture viewer. Pool textures stored in some Xbox BCPack formats (some BC7) can't be read yet; they are in a folder of their own.
+- GTA VI: audio (`.awc`) opens in the audio viewer: Opus and PCM tracks play and export as WAV, also the radio stations in stereo; the stored data of every track can be exported.
+- GTA VI: subtitle and text databases (`.zldbmt`) are unpacked, so their text can be read in the hex view.
+- The texture viewer and the audio viewer are the same for every game: GTA IV's `.wtd` and `.ivaud`, GTA VI's `.ztd`, `.ttpf` textures and `.awc`. The texture viewer also opens `.dds` files.
+- Edit mode is off for Red Dead Redemption 2 and GTA VI: writing their archives is not tested yet.
+- SparkIV may only be used for offline modding. It says so once at the first start, in NOTICE.txt and in Settings → About ("Notice on use").
+- The main window has one "Choose Game" button, which opens the game selector, instead of one button per game.
+- New setting "Texture filtering" for the 3D views, like the game's (Tri-Linear, Anisotropic x2 to x16; default Anisotropic x16).
+- New setting "Smooth edges" for the 3D views (on by default).
+- Lots of bug fixes, mainly in the cutscene viewer:
+  - Street lamps (also the ones that can be knocked over) have their glow and light, and traffic lights show the glow of their current colour, switched by the game's clock.
+  - The map's smoke plumes and steam are shown and lit as in the game.
+  - Vehicle headlamps are drawn as in the game.
+  - Lamps: 8 lamp shadow maps as in the game, all of a section's cutscene lights are used (not only the 8 strongest), map spotlights are as wide as in the game, and floodlights no longer appear twice.
+  - Glass lamp globes no longer show speckles and are lit by the lamps' cones of light as in the game.
+  - Characters: the inner faces of clothes no longer show (hi-vis vest), sleeves, arms and necks twist as in the game, hair fades into the skin as in the game, and their materials no longer mirror the surroundings wrongly.
+  - Lamp back plates and other mirroring materials are no longer too bright.
+  - Surfaces without a texture are black, as in the game.
+  - The morning and night sky are no longer too dark, and the clouds look as in the game.
+  - The water's mirror fades into the distance, and the swell moves with the game's clock as strongly as in the game.
+  - Depth of field and the fog's colour are closer to the game; far versions of buildings no longer light the scene.
+  - Glows that blend over the picture (the credits, night windows) fade into the distance as in the game, and far night windows show from the same distance as in the game.
+
 ## v0.9.0-alpha.6 – 2026-11-06
 
 - Cutscenes, models and animations are now drawn by SparkIV's own Direct3D 12 renderer instead of a web page: much smoother playback (also in busy scenes like the intro's harbour), faster loading, and a picture closer to the game.

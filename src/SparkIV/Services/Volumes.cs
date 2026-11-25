@@ -70,6 +70,16 @@ namespace SparkIV.WinUI.Services
         return Add(new Volume(rpf8.OpenNested(file), file.Name, host, file, null));
       }
 
+      // GTA VI (RPF9): a nested archive is read in place from the real parent
+      // file (its members are stored there). This avoids copying multi-GB audio
+      // packs to a temp file - a byte[] cannot even hold core.speech.ped.rpf.
+      if (host.Volume.FileSystem is GtaVIFileSystem gta && !file.IsCompressed && file.Offset > 0 && file.CompressedSize >= 64)
+      {
+        var nested = new GtaVIFileSystem();
+        nested.OpenNested(gta.ArchivePath, file.Offset, file.CompressedSize);
+        return Add(new Volume(nested, file.Name, host, file, null));
+      }
+
       string path;
       string? archivePath = null;
       string scope;
@@ -108,7 +118,8 @@ namespace SparkIV.WinUI.Services
     public static bool IsArchiveName(string name)
     {
       string ext = System.IO.Path.GetExtension(name);
-      return ext.Equals(".rpf", StringComparison.OrdinalIgnoreCase) || ext.Equals(".img", StringComparison.OrdinalIgnoreCase);
+      return ext.Equals(".rpf", StringComparison.OrdinalIgnoreCase) || ext.Equals(".img", StringComparison.OrdinalIgnoreCase) ||
+             ext.Equals(".ttpf", StringComparison.OrdinalIgnoreCase);  // GTA VI texture pools, opened as a folder of textures
     }
 
     /// <summary>
@@ -121,6 +132,11 @@ namespace SparkIV.WinUI.Services
       {
         return new IMGFileSystem();
       }
+      // GTA VI texture pool: not encrypted, read from the file itself.
+      if (System.IO.Path.GetExtension(path).Equals(".ttpf", StringComparison.OrdinalIgnoreCase) || TtpfFileSystem.IsTtpfFile(path))
+      {
+        return new TtpfFileSystem();
+      }
       // An archive in the RDR2 folder that is not RPF8 is one the launcher has not downloaded yet (zeros): the RDR2
       // reader says so, where the GTA IV one could only fail.
       if (Rpf8Archive.IsRpf8File(path) || Rdr2Support.Current?.Contains(path) == true)
@@ -129,15 +145,23 @@ namespace SparkIV.WinUI.Services
           "This is a Red Dead Redemption 2 archive. Open Red Dead Redemption 2 first (its keys are set up there).");
         return new Rpf8FileSystem(rdr2.Secrets, rdr2.Names, rdr2Scope);
       }
+      // GTA VI (RPF9): the cipher is read from the game's own executable next to the archive.
+      if (GtaVIFileSystem.IsRpf9File(path))
+      {
+        return new GtaVIFileSystem();
+      }
       return new RPFFileSystem();
     }
 
-    /// <summary>Whether <paramref name="volume"/> is in an archive SparkIV can't change (RDR2's).</summary>
+    /// <summary>
+    /// Whether <paramref name="volume"/> is in an archive SparkIV doesn't change: RDR2's and GTA VI's
+    /// (writing them is not tested yet, so edit mode is off for them).
+    /// </summary>
     public static bool IsReadOnly(Volume volume)
     {
       for (Volume? v = volume; v != null; v = v.Host?.Volume)
       {
-        if (v.FileSystem is Rpf8FileSystem)
+        if (v.FileSystem is Rpf8FileSystem or GtaVIFileSystem or TtpfFileSystem)
         {
           return true;
         }

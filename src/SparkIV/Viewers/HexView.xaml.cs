@@ -134,6 +134,13 @@ namespace SparkIV.WinUI.Viewers
         text += "   \u00B7   " + length.ToString("N0") + " bytes selected (0x" + start.ToString("X") + " \u2013 0x" + (start + length - 1).ToString("X") + ")";
       }
       text += "   \u00B7   " + _data.Length.ToString("N0") + " bytes";
+      // When the member was stored zlib-compressed, the bytes shown here are the
+      // decompressed content (SparkIV unpacks it on open), so say so \u2014 otherwise
+      // the size and first bytes wouldn't match the archive's stored member.
+      if (_context.File?.Codec is string c && c.StartsWith("zlib", StringComparison.OrdinalIgnoreCase))
+      {
+        text += " (unpacked from zlib)";
+      }
       Status.Text = text;
 
       UpdateInspector();

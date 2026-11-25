@@ -67,7 +67,12 @@ namespace SparkIV.WinUI
 
       ExtendsContentIntoTitleBar = true;
       SetTitleBar(AppTitleBar);
-      Root.Loaded += (sender, args) => TitleBarColors.Apply(this, Root);
+      Root.Loaded += async (sender, args) =>
+      {
+        TitleBarColors.Apply(this, Root);
+        // First start: once, over the game selector, that SparkIV is for offline modding only.
+        await OfflineNotice.ShowIfNeededAsync(Root.XamlRoot);
+      };
       Root.ActualThemeChanged += (sender, args) => TitleBarColors.Apply(this, Root);
 
       string icon = Path.Combine(AppContext.BaseDirectory, "SparkIV.ico");
@@ -165,12 +170,15 @@ namespace SparkIV.WinUI
       return grid;
     }
 
-    /// <summary>The icon of the game's exe when the folder of a platform is known, else the short name of the game.</summary>
+    /// <summary>
+    /// The icon of the game's exe when the folder of a platform is known and the exe has one; else (no folder yet, or
+    /// an exe without an icon of its own, as GTA VI's Xbox build) a game controller from Windows' own symbol font.
+    /// </summary>
     private static UIElement CreateTileContent(Game game)
     {
       string? folder = game.Platforms.Select(p => Games.InstallFolder(game, p)).FirstOrDefault(f => f != null);
       string exe = game.Executable;
-      if (folder != null && System.IO.File.Exists(Path.Combine(folder, exe)))
+      if (folder != null && System.IO.File.Exists(Path.Combine(folder, exe)) && HasOwnIcon(Path.Combine(folder, exe)))
       {
         try
         {
@@ -188,20 +196,35 @@ namespace SparkIV.WinUI
         }
         catch (Exception)
         {
-          // Then the name.
+          // Then the controller.
         }
       }
-      return new TextBlock
+      return new FontIcon
       {
-        Text = game.ShortName,
-        FontWeight = FontWeights.SemiBold,
-        FontSize = game.ShortName.Length > 2 ? 16 : 24,
+        Glyph = "",
+        FontSize = 32,
         HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
       };
     }
 
     #endregion
+
+    /// <summary>Whether the file has an icon of its own (ExtractIconEx with index -1 returns the number of icons).</summary>
+    private static bool HasOwnIcon(string path)
+    {
+      try
+      {
+        return ExtractIconExW(path, -1, IntPtr.Zero, IntPtr.Zero, 0) > 0;
+      }
+      catch (Exception)
+      {
+        return true;  // Then as before: whatever Windows gives for it.
+      }
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint ExtractIconExW(string file, int index, IntPtr large, IntPtr small, uint count);
 
     private async Task ChooseAsync(Game game, string platform)
     {

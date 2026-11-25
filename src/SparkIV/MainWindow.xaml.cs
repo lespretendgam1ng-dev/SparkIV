@@ -88,16 +88,18 @@ namespace SparkIV.WinUI
       UpdateSortHeaders();
       UpdateEditModeButton();
 
-      // Just updated (Velopack restarted SparkIV into the new version): what's new, once, as soon as the window shows.
-      if (Updates.JustUpdated)
+      // As soon as the window shows: the offline-modding notice if SparkIV started with a file (the game selector
+      // shows it otherwise), then, just updated (Velopack restarted SparkIV into the new version), what's new, once.
+      async void ShowFirstDialogs(object sender, RoutedEventArgs args)
       {
-        async void ShowWhatsNew(object sender, RoutedEventArgs args)
+        Root.Loaded -= ShowFirstDialogs;
+        await OfflineNotice.ShowIfNeededAsync(Root.XamlRoot);
+        if (Updates.JustUpdated)
         {
-          Root.Loaded -= ShowWhatsNew;
           await ChangelogDialog.ShowAsync(Root.XamlRoot, Updates.CurrentVersion);
         }
-        Root.Loaded += ShowWhatsNew;
       }
+      Root.Loaded += ShowFirstDialogs;
 
       CheckForUpdate();
     }
@@ -127,31 +129,22 @@ namespace SparkIV.WinUI
 
     #region Opening
 
-    private async void OpenGame_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(Games.GtaIV);
-
-    private async void OpenEpisodes_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(Games.Episodes);
-
-    private async void OpenRdr2_Click(object sender, RoutedEventArgs e) => await OpenGameAsync(Games.Rdr2);
-
-    private async Task OpenGameAsync(Game game)
+    /// <summary>The game selector of the start (all games and their platforms); the game chosen is browsed here.</summary>
+    private async void ChooseGame_Click(object sender, RoutedEventArgs e)
     {
-      // The folder set in the settings, else the one found; asked for once and then remembered.
-      string? path = Games.InstallFolder(game, "Windows");
-      if (path == null)
+      ChooseGameButton.IsEnabled = false;
+      try
       {
-        var (folder, error) = await GameFolders.PickAsync(this, game, "Windows");
-        if (error != null)
+        if (await GameChooserWindow.ChooseGameAsync() is GameInstall chosen)
         {
-          ShowMessage(InfoBarSeverity.Error, "Not a game folder", error);
+          await OpenGameAsync(chosen);
         }
-        if (folder == null)
-        {
-          return;
-        }
-        path = folder;
       }
-
-      await OpenGameAsync(new GameInstall(game, path, "Windows"));
+      finally
+      {
+        ChooseGameButton.IsEnabled = true;
+        Activate();
+      }
     }
 
     /// <summary>Browses a game's folder (also the game chosen when SparkIV starts).</summary>
@@ -232,9 +225,6 @@ namespace SparkIV.WinUI
     private void UpdateEditModeButton()
     {
       EditModeButton.IsChecked = EditMode.IsOn;
-      ToolTipService.SetToolTip(EditModeButton, EditMode.IsOn
-        ? "Edit mode is on: game files can be changed. Click to turn it off."
-        : "Turn on changing game files (import, replace, save)");
       UpdateCommands();
     }
 
@@ -269,6 +259,12 @@ namespace SparkIV.WinUI
       if (install.Game == Games.Rdr2)
       {
         return await PrepareRdr2Async(install.Folder);
+      }
+
+      // GTA VI (RPF9): the cipher is read from the game executable by the reader itself; no key to load here.
+      if (install.Game == Games.GtaVI)
+      {
+        return true;
       }
 
       KeyUtil keyUtil = install.KeyUtil;
@@ -329,6 +325,7 @@ namespace SparkIV.WinUI
       var picker = new FileOpenPicker();
       picker.FileTypeFilter.Add(".rpf");
       picker.FileTypeFilter.Add(".img");
+      picker.FileTypeFilter.Add(".ttpf");
       InitializeWithWindow(picker);
       var file = await picker.PickSingleFileAsync();
       if (file == null)
@@ -939,12 +936,12 @@ namespace SparkIV.WinUI
       {
         if (Volumes.IsReadOnly(_current.Volume))
         {
-          // RDR2's archives can't be changed: a copy to look at, not taken back.
+          // RDR2's and GTA VI's archives aren't changed: a copy to look at, not taken back.
           string copy = _volumes.NewTempFile("-" + item.File.Name);
           System.IO.File.WriteAllBytes(copy, item.File.GetData());
           System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(copy) { UseShellExecute = true });
           ShowMessage(InfoBarSeverity.Informational, item.Name + " opened in another program",
-                      "A copy: Red Dead Redemption 2's archives are read-only in SparkIV, so changes to it are not taken back.");
+                      "A copy: this game's archives are read-only in SparkIV, so changes to it are not taken back.");
           return;
         }
         ExternalEdits.Open(item.File, _current.Volume);
@@ -1035,7 +1032,17 @@ namespace SparkIV.WinUI
         string text = selected.Count == 1 ? "1 item selected" : selected.Count + " items selected";
         if (selected.All(i => i.File != null))
         {
-          text += "   " + EntryItem.FriendlySize(selected.Sum(i => (long)i.File!.Size));
+          text += "   " + EntryItem.FriendlySize(selected.Sum(i => i.File!.Size));
+        }
+        // When a single file is selected, show the full labelled explanation
+        // (what the name is, offset, codec, sizes) that the column cannot fit.
+        if (selected.Count == 1)
+        {
+          string detail = !string.IsNullOrEmpty(selected[0].DetailLong)
+                        ? selected[0].DetailLong
+                        : selected[0].Resource;
+          if (!string.IsNullOrEmpty(detail))
+            text += "    ·    " + detail;
         }
         StatusSelection.Text = text;
       }
@@ -1121,7 +1128,8 @@ namespace SparkIV.WinUI
     // Files dragged from Explorer onto the list are imported into the folder shown, like Import.
     private void FileList_DragOver(object sender, DragEventArgs e)
     {
-      if (_current != null && e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+      if (_current != null && !Volumes.IsReadOnly(_current.Volume) &&
+          e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
       {
         e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
         e.DragUIOverride.Caption = EditMode.IsOn ? "Import into " + _current.Name : "Import (turns on edit mode)";
@@ -1130,7 +1138,8 @@ namespace SparkIV.WinUI
 
     private async void FileList_Drop(object sender, DragEventArgs e)
     {
-      if (_current == null || !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+      if (_current == null || Volumes.IsReadOnly(_current.Volume) ||
+          !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
       {
         return;
       }
@@ -1273,9 +1282,16 @@ namespace SparkIV.WinUI
       FilterBox.IsEnabled = open;
       ExportButton.IsEnabled = open && FileList.SelectedItems.Count > 0;
       ExportAllButton.IsEnabled = open;
-      // Changing files only in edit mode.
-      ImportButton.IsEnabled = open && EditMode.IsOn && !Volumes.IsReadOnly(_current!.Volume);
-      SaveButton.IsEnabled = _current != null && _modified.Contains(_current.Volume) && EditMode.IsOn;
+      // Changing files only in edit mode, and not in RDR2's or GTA VI's archives (writing them is untested).
+      bool readOnly = open && Volumes.IsReadOnly(_current!.Volume);
+      EditModeButton.IsEnabled = !readOnly;
+      ToolTipService.SetToolTip(EditModeButton, readOnly
+        ? "Edit mode is not available for this game yet: its archives are read-only in SparkIV."
+        : EditMode.IsOn
+          ? "Edit mode is on: game files can be changed. Click to turn it off."
+          : "Turn on changing game files (import, replace, save)");
+      ImportButton.IsEnabled = open && EditMode.IsOn && !readOnly;
+      SaveButton.IsEnabled = _current != null && _modified.Contains(_current.Volume) && EditMode.IsOn && !readOnly;
       UpdateSaveShield();
     }
 

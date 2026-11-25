@@ -22,7 +22,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
-using RageLib.Audio;
+using SparkIV.WinUI.Viewers;
 
 namespace SparkIV.WinUI.Model
 {  /// <summary>What a row in the track list stands for.</summary>
@@ -36,28 +36,28 @@ namespace SparkIV.WinUI.Model
   /// <summary>One row in the track list.</summary>
   public sealed class AudioTrackRow
   {
-    internal AudioTrackRow(AudioTrack track, string channels, AudioRowKind kind)
-
+    internal AudioTrackRow(IAudioTrack track, string channels, AudioRowKind kind)
     {
       Track = track;
       Channels = channels;
       RowKind = kind;
     }
 
-    public AudioTrack Track { get; }
+    public IAudioTrack Track { get; }
     internal AudioRowKind RowKind { get; }
 
     public string Name => Track.Name;
     public string Channels { get; }
-    public string DurationText => FormatLength(Track.Length);
-    public string RateText => Track.SamplesPerSecond.ToString("N0") + " Hz";
+    public string DurationText => Track.Length > TimeSpan.Zero ? FormatLength(Track.Length) : "\u2013";
+    public string RateText => Track.SamplesPerSecond > 0 ? Track.SamplesPerSecond.ToString("N0") + " Hz" : "\u2013";
+    public string PlayHint => Track.NotPlayable ?? "Double-click to play";
 
-    public string Glyph => RowKind == AudioRowKind.Multichannel ? "\uE7F5" : "\uE8D6";
+    public string Glyph => Track.NotPlayable != null ? "\uE7BA" : RowKind == AudioRowKind.Multichannel ? "\uE7F5" : "\uE8D6";
     public Windows.UI.Text.FontWeight NameWeight => RowKind == AudioRowKind.Multichannel ? FontWeights.SemiBold : FontWeights.Normal;
 
     // The mono waves a multichannel track is stored as are indented and dimmed.
     public Thickness NamePadding => new Thickness(RowKind == AudioRowKind.Member ? 32 : 8, 0, 8, 0);
-    public double RowOpacity => RowKind == AudioRowKind.Member ? 0.7 : 1.0;
+    public double RowOpacity => RowKind == AudioRowKind.Member || Track.NotPlayable != null ? 0.7 : 1.0;
 
     private static string FormatLength(TimeSpan time) =>
       time.TotalHours >= 1

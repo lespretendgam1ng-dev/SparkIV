@@ -44,6 +44,19 @@ namespace SparkIV.WinUI.Services
       public int TextureFilter { get; set; } = 16;
 
       public string? UpdateChannel { get; set; }
+
+      public bool OfflineNoticeShown { get; set; }
+    }
+
+    /// <summary>Whether the notice "offline modding only" was shown (once, at the first start).</summary>
+    public static bool OfflineNoticeShown
+    {
+      get => Load().OfflineNoticeShown;
+      set
+      {
+        Load().OfflineNoticeShown = value;
+        Save();
+      }
     }
 
     /// <summary>The update channel chosen ("Alpha", "Beta", "Release"); null for the one of the running version.</summary>

@@ -76,6 +76,9 @@ namespace SparkIV.WinUI
     private async void ShowLicense_Click(object sender, RoutedEventArgs e) =>
       await ShowTextAsync("License", LicenseFile("LICENSE.txt"), null);
 
+    private async void ShowNotice_Click(object sender, RoutedEventArgs e) =>
+      await ShowTextAsync("Notice on use", LicenseFile("NOTICE.txt"), null);
+
     // The notices name further license files (.NET, Windows App SDK, WebView2), too long to show here; they are in the folder.
     private async void ShowNotices_Click(object sender, RoutedEventArgs e) =>
       await ShowTextAsync("Third-party notices", LicenseFile(@"licenses\THIRD-PARTY-NOTICES.txt"), LicenseFile("licenses"));

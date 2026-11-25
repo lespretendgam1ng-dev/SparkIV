@@ -95,6 +95,9 @@ namespace SparkIV.WinUI.Services
 
   internal static class Games
   {
+    /// <summary>GTA VI's files are those of the Xbox Series build (game_scarlett_master.exe).</summary>
+    public const string XboxSeries = "Xbox Series";
+
     public static Game GtaIV { get; } = new Game(
       "gtaiv", "Grand Theft Auto IV", "IV", new[] { "Windows" }, new[] { "" }, "GTAIV.exe",
       folder => System.IO.File.Exists(Path.Combine(folder, "GTAIV.exe")),
@@ -114,8 +117,19 @@ namespace SparkIV.WinUI.Services
       folder => null,
       GameLocator.FindRdr2Directory);
 
+    /// <summary>
+    /// Grand Theft Auto VI: RPF9 archives, whose cipher the reader reads straight from the game's own
+    /// executable next to the archive (see RageLib.FileSystem.GtaVIFileSystem). No key is loaded here.
+    /// </summary>
+    public static Game GtaVI { get; } = new Game(
+      "gtavi", "Grand Theft Auto VI", "VI", new[] { XboxSeries }, new[] { "" },
+      RageLib.FileSystem.GtaVIFileSystem.ExecutableName,
+      folder => System.IO.File.Exists(Path.Combine(folder, RageLib.FileSystem.GtaVIFileSystem.ExecutableName)),
+      folder => null,
+      () => null);
+
     /// <summary>In the order the choice offers them.</summary>
-    public static IReadOnlyList<Game> All { get; } = new[] { GtaIV, Episodes, Rdr2 };
+    public static IReadOnlyList<Game> All { get; } = new[] { GtaIV, Episodes, Rdr2, GtaVI };
 
     /// <summary>
     /// The game of what is open: models find their textures through its .ide files, web pages copied out
@@ -154,6 +168,10 @@ namespace SparkIV.WinUI.Services
       for (var dir = new DirectoryInfo(Path.GetDirectoryName(full)!); dir != null; dir = dir.Parent)
       {
         string folder = dir.FullName;
+        if (System.IO.File.Exists(Path.Combine(folder, RageLib.FileSystem.GtaVIFileSystem.ExecutableName)))
+        {
+          return new GameInstall(GtaVI, folder, XboxSeries);
+        }
         if (System.IO.File.Exists(Path.Combine(folder, "RDR2.exe")))
         {
           return new GameInstall(Rdr2, folder, "Windows");
@@ -176,7 +194,9 @@ namespace SparkIV.WinUI.Services
     /// <summary>Whether a file can't be opened without knowing its game: archives (their key), web pages (the game's texts).</summary>
     public static bool NeedsGame(string fileName)
     {
-      return Volumes.IsArchiveName(fileName) || Path.GetExtension(fileName).Equals(".whm", StringComparison.OrdinalIgnoreCase);
+      // A texture pool (.ttpf) needs no key: it is not encrypted.
+      return (Volumes.IsArchiveName(fileName) && !Path.GetExtension(fileName).Equals(".ttpf", StringComparison.OrdinalIgnoreCase)) ||
+             Path.GetExtension(fileName).Equals(".whm", StringComparison.OrdinalIgnoreCase);
     }
   }
 }

@@ -196,15 +196,18 @@
                     <StackPanel Spacing="2">
                         <TextBlock x:Name="AboutVersionText" Style="{StaticResource SubtitleTextBlockStyle}" />
                         <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Text="A file browser, viewer and editor for Grand Theft Auto IV and Episodes from Liberty City (PC)." />
+                                   Text="A file browser, viewer and editor for Grand Theft Auto IV and Episodes from Liberty City (PC), with experimental, read-only support for Red Dead Redemption 2 (PC) and Grand Theft Auto VI (Xbox Series)." />
                     </StackPanel>
                     <TextBlock TextWrapping="Wrap" IsTextSelectionEnabled="True"
-                               Text="Copyright (C) 2026 reditec. Based on SparkIV and RageLib by aru (2008–2009), continued by Ahmed Walid (ahmed605) and Silent Spud." />
+                               Text="Copyright (C) 2026 reditec. Based on SparkIV and RageLib by aru (2008–2009), continued by Ahmed Walid (ahmed605) and Silent Spud. Grand Theft Auto VI support with help from PB07 (file names, decryption)." />
+                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold"
+                               Text="This tool may only be used for OFFLINE MODDING. We expressly distance ourselves from any use of SparkIV for online modding (the games' online modes, cheating, or anything that affects other players or the games' online services)." />
                     <TextBlock TextWrapping="Wrap"
                                Text="SparkIV is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE." />
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="Changelog" Click="ShowChangelog_Click" />
                         <Button Content="License (GPLv3)" Click="ShowLicense_Click" />
+                        <Button Content="Notice on use" Click="ShowNotice_Click" />
                         <Button Content="Third-party notices" Click="ShowNotices_Click" />
                         <Button Content="Source code" Click="OpenSource_Click" />
                     </StackPanel>

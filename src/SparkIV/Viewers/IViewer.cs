@@ -108,8 +108,15 @@ namespace SparkIV.WinUI.Viewers
       // Red Dead Redemption 2's .meta files are XML text.
       ByExtension[".meta"] = xml;
       ByExtension[".sco"] = new ScriptViewer();
-      ByExtension[".ivaud"] = new AudioViewer();
-      ByExtension[".wtd"] = new TextureViewer();
+      // Audio banks of every game: GTA IV's .ivaud, GTA VI's .awc (members whose first bytes are "ADAT").
+      var audio = new AudioViewer();
+      ByExtension[".ivaud"] = audio;
+      ByExtension[".awc"] = audio;
+      // Texture dictionaries of every game: GTA IV's .wtd, GTA VI's .ztd.
+      var textures = new TextureViewer();
+      ByExtension[".wtd"] = textures;
+      ByExtension[".ztd"] = textures;
+      ByExtension[".dds"] = textures;  // also the textures of GTA VI's texture pools (.ttpf)
       ByExtension[".whm"] = new WebPageViewer();
       ByExtension[".wad"] = new AnimationViewer();
       // The viewers that only know GTA IV (PC)'s formats and rules (cutscenes, collision). Another game or

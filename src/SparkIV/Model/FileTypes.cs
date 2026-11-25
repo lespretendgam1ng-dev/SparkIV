@@ -161,6 +161,28 @@ namespace SparkIV.WinUI.Model
       Add("Shaders and Effects", 9, ShaderGlyph, ".ypt", "Particle effects");
       Add("Web Pages", 10, WebGlyph, ".gfx", "Scaleform interface");
       Add("Videos and Documents", 11, VideoGlyph, ".bk2", "Bink 2 Video");
+
+      // Grand Theft Auto VI: the "z" (Scarlett) row of the RAGE extensions.
+      Add("Textures and Images", 2, ImageGlyph, ".ztd", "Texture dictionary");
+      Add("Archives", 1, ArchiveGlyph, ".ttpf", "Texture pool");
+      Add("Models", 3, ModelGlyph, ".zdr", "Drawable object");
+      Add("Models", 3, ModelGlyph, ".zdd", "Drawable dictionary");
+      Add("Models", 3, ModelGlyph, ".zft", "Fragment object");
+      Add("Map and Collision", 4, MapGlyph, ".zmap", "Map placements");
+      Add("Map and Collision", 4, MapGlyph, ".ztyp", "Archetype definitions");
+      Add("Map and Collision", 4, MapGlyph, ".zbn", "Static collision");
+      Add("Map and Collision", 4, MapGlyph, ".znv", "Nav mesh");
+      Add("Map and Collision", 4, MapGlyph, ".znd", "Paths");
+      Add("Animation", 5, AnimationGlyph, ".zcd", "Clip dictionary");
+      Add("Animation", 5, AnimationGlyph, ".zed", "Expression dictionary");
+      Add("Animation", 5, AnimationGlyph, ".zfd", "Frame filter dictionary");
+      Add("Animation", 5, AnimationGlyph, ".zpmd", "Parameterized motion dictionary");
+      Add("Scripts", 7, ScriptGlyph, ".zsc", "Compiled Scripts");
+      Add("Text and Data", 8, TextGlyph, ".zmt", "Metadata");
+      Add("Text and Data", 8, TextGlyph, ".zldbmt", "Text database (subtitles)");
+      Add("Text and Data", 8, TextGlyph, ".psin", "Parser metadata (PSIN)");
+      Add("Shaders and Effects", 9, ShaderGlyph, ".zpt", "Particle effects");
+      Add("Videos and Documents", 11, VideoGlyph, ".bik", "Bink Video");
     }
 
     private static void Add(string group, int order, string glyph, string extension, string name)

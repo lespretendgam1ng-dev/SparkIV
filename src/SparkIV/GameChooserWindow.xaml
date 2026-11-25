@@ -49,10 +49,14 @@
 
         <InfoBar x:Name="Info" Grid.Row="3" Margin="16,8,16,0" IsOpen="False" Severity="Error" />
 
-        <Grid Grid.Row="4" Margin="24,12,24,16">
-            <TextBlock x:Name="HintText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0"
+        <Grid Grid.Row="4" Margin="24,12,24,16" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="HintText" VerticalAlignment="Center" TextWrapping="Wrap"
                        Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <Button x:Name="CancelButton" HorizontalAlignment="Right" MinWidth="96" Click="Cancel_Click" />
+            <Button x:Name="CancelButton" Grid.Column="1" VerticalAlignment="Center" MinWidth="96" Click="Cancel_Click" />
         </Grid>
     </Grid>
 </Window>
