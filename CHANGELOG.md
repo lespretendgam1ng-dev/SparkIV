@@ -2,7 +2,7 @@
 
 Versions follow [Semantic Versioning](docs/versioning.md); 1.0 will be the first version that fully supports GTA IV (PC). SparkIV shows this file in Settings → About, and after an update the part of the new version.
 
-## v0.10.0-alpha.1 – 2026-11-25
+## v0.9.0-alpha.7 – 2026-11-25
 
 - New (experimental, read-only): **Red Dead Redemption 2** (PC). SparkIV opens its RPF8 archives with the file names of the RAGE-StringsDatabase; a one-time setup assistant reads the archives' keys from the running game and keeps them on your PC.
 - New (experimental, read-only): **Grand Theft Auto VI** (Xbox Series). SparkIV opens its RPF9 archives, also archives inside archives (multi-GB ones read in place). The cipher is read from the game's own executable; nothing secret is part of SparkIV.
