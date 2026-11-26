@@ -1,4 +1,4 @@
-# Cutscene Timeline View (Design)
+﻿# Cutscene Timeline View (Design)
 
 Status: **design proposal** for [reditec/SparkIV#119](https://github.com/reditec/SparkIV/issues/119).  
 Applies to: **GTA IV, PC**, WinUI 3 cutscene viewer (`SparkIV.WinUI.Viewers.GtaIV.Pc.CutsceneView`).  
@@ -9,7 +9,7 @@ This document is design-first; it does not describe shipped timeline UI.
 Add a timeline to the cutscene view that shows, over the scene's whole time:
 
 - one bar per clip, grouped by **Camera**, **Actors** (peds, props, vehicles), and **Lights**;
-- markers for camera cuts, subtitles, sound/facial events, `[EFFECTS]`, and draw-distance changes;
+- markers for subtitles and draw-distance changes (MVP); experimental CameraControl(144) cut candidates and parsed `[EFFECTS]`/event markers only after validation;
 - a playhead/scrub interaction that stays in step with the existing transport slider;
 - click-to-inspect for bars and click-to-jump for markers.
 
@@ -72,7 +72,7 @@ The timeline sits **between the viewport row and the existing transport panel**.
 +--------------------------------------------------------------------------------------+
 ```
 
-Legend for sketch markers: `*D` camera cut candidate, `^T` subtitle, `vDD` draw-distance change, `!E` effect/event. Glyphs/colors are illustrative; see Visual spec.
+Legend for sketch markers: `^T` subtitle, `vDD` draw-distance change. `*D` CameraControl(144) is experimental/Phase 2 only (unresolved semantics), not shown by default in MVP; `!E` `[EFFECTS]` requires parsing. Glyphs/colors illustrative; see Visual spec.
 
 ### Placement rationale
 
@@ -95,7 +95,7 @@ Legend for sketch markers: `*D` camera cut candidate, `^T` subtitle, `vDD` draw-
 | `Camera` | One lane for section camera clip bars; camera-cut markers shown in marker strip above lanes | Expanded | `CutSection.Camera`, camera clip `Animation` in section WAD |
 | `Actors` | Subgroups `Peds`, `Props`, `Vehicles` | Expanded; subgroups expanded when non-empty | `CutSection.Models`, `CutActor` |
 | `Lights` | One lane per light clip, or packed lanes if many | Expanded when present, otherwise empty header | `CutSection.Lights`, `CutsceneLights.TracksOf` |
-| `Markers` (ruler strip) | Global markers: subtitles, draw distance, effects, sound/facial events, camera cuts | Always visible | see Data model mapping |
+| `Markers` (ruler strip) | MVP: subtitles, draw distance. Experimental/parsed-only: CameraControl 144, `[EFFECTS]`, sound/facial/action events behind validation | Always visible | see Data model mapping |
 
 ### Actor classification
 
@@ -153,7 +153,7 @@ Markers live in a dedicated marker strip under the ruler, grouped by rows to red
 
 | Marker | Glyph/text | Source | Click behavior | Availability |
 |---|---|---|---|---|
-| Camera cut | `D` | camera `CameraControl` (track 144) transitions; optional heuristic fallback only if explicitly enabled | Jump playhead to cut time | **Experimental** - track exists, semantics unresolved in docs |
+| Camera cut candidate | `D` | camera `CameraControl` (track 144) transitions | Jump playhead to cut time | **Phase 2 / Experimental only** - unresolved semantics; hidden by default in MVP |
 | Subtitle | `T` | `CutFile.Subtitles` (`Start`, `Length`, `Key`, `Part`) + `CutsceneDocument.Texts` | Jump to subtitle start; select subtitle row | Available now |
 | Draw distance | `DD` | `CutFile.DrawDistances` / `DrawDistanceSteps` | Jump to change time; show metres | Available now |
 | Effect | `FX` | `[EFFECTS]` block | Jump/select effect | **Not parsed today** |
@@ -236,7 +236,7 @@ All field names/types below are grounded in current code. Proposed types are sug
 |---|---|---|---|
 | Subtitle | `CutSubtitle(int Start, int Length, string Key, int Part)`; `CutFile.Subtitles` | `CutFile.Parse` `[TEXT]`; `CutsceneView` builds `CutSubtitleRow` | Times are ms from start of subtitle's part first section; `CutsceneView` already converts to scene seconds. |
 | Draw distance | `CutFile.DrawDistances: List<(int Part, float Ms, float Metres)>`; `DrawDistanceSteps(int sectionIndex, float fps)`; `DrawDistance` | `CutFile.Parse` `[DRAW_DISTANCE]`; `CutsceneView.SendScene`/player draw-distance use | Has part/file fallback behavior; reuse `DrawDistanceSteps` logic. |
-| Camera cut candidate (144) | `AnimationTrackKind.CameraControl = 144` | `RageLib/GtaIV/Pc/Animation/AnimationFile.cs`; `docs/GtaIV/Pc/formats/cutscene-camera.md`; `docs/GtaIV/Pc/data-support.md` | **Unresolved semantics.** Docs: not used/unclear, marks cuts, exe state machine caveats. Treat as experimental marker with explicit tooltip. |
+| Camera cut candidate (144) | `AnimationTrackKind.CameraControl = 144` | `RageLib/GtaIV/Pc/Animation/AnimationFile.cs`; `docs/GtaIV/Pc/formats/cutscene-camera.md`; `docs/GtaIV/Pc/data-support.md` | **Unresolved semantics.** Phase 2/experimental only, hidden by default; carry provenance + validation status. |
 | Sound event | `AnimationTrackKind.UV1` used as AudioEvent in animation viewer; integer track values hashed to sound names | `AnimationFile` comments; `AnimationView.SendClip` | Data-support says not present in cutscenes; used in animation viewer. Surface only if actually present. |
 | Facial animation event | `AnimationTrackKind.FacialAnimation = 134` | `AnimationFile`; `AnimationView.SendClip` | Same caveat as sound events. Distinct from Type21 face-shape weights (`CastMotion.Face`). |
 | `[EFFECTS]` | `[EFFECTS]` block documented in data-support; **no `CutFile.Parse` case today** | `docs/GtaIV/Pc/data-support.md` (ignored, assumed fields); `CutFile.Parse` lacks `EFFECTS` | Must be parsed/modeled before markers can be shown. |
@@ -320,7 +320,7 @@ Extraction should be a pure/model-building step over `CutsceneDocument` + sectio
 
 ## Risks and constraints
 
-- **CameraControl semantics are unresolved.** `AnimationTrackKind.CameraControl` exists, but `data-support.md` and `cutscene-camera.md` mark it unclear/not used and describe exe cut-detection complexity. Do not present 144-derived cuts as authoritative without validation.
+- **CameraControl semantics are unresolved.** `AnimationTrackKind.CameraControl` exists, but `data-support.md` and `cutscene-camera.md` mark it unclear/not used and describe exe cut-detection complexity. Do not render 144-derived cuts by default in MVP; if added, keep Phase 2/experimental, hidden by default, with provenance/validation status.
 - **`[EFFECTS]` is not parsed.** `data-support.md` documents it as ignored and `CutFile.Parse` has no `EFFECTS` case. Marker support requires parser/model work and field verification.
 - **Sound/facial clip events may be absent in cutscenes.** Data-support track table says ActionFlags/UV0/UV1/FacialAnimation are not present in cutscenes and used in animation viewer. The UI should degrade cleanly to "no events found".
 - **Timebase complexity.** Subtitles are part-relative (`CutSubtitle.Part`, `Start` ms from part first section). Draw distances have part/file fallback behavior in `CutFile.DrawDistanceSteps`. Marker extraction must reuse these rules, not reimplement ad hoc.
@@ -354,4 +354,4 @@ Extraction should be a pure/model-building step over `CutsceneDocument` + sectio
 - Clicking subtitle marker selects the same subtitle row and seeks to same time as `SubtitleList_ItemClick`.
 - Draw-distance markers appear at times consistent with `CutFile.DrawDistanceSteps`.
 - Bar details report missing WAD/camera clip using existing notes.
-- No claims/UI labels present CameraControl 144 or `[EFFECTS]` as fully supported unless parser/semantics are implemented and validated.
+- CameraControl 144 not shown by default in MVP; any 144-derived cut marker is Phase 2/experimental with provenance/validation status. `[EFFECTS]` not presented as supported unless parser/semantics are implemented and validated.
