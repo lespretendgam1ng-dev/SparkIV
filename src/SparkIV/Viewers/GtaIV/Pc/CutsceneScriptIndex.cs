@@ -1,4 +1,4 @@
-/**********************************************************************\
+﻿/**********************************************************************\
 
  SparkIV
  Copyright (C) 2026  reditec
@@ -305,9 +305,9 @@ namespace SparkIV.WinUI.Viewers.GtaIV.Pc
     // the mission's marker (#38). Conservative: a false positive only drops to camera-centred swell, while
     // a false negative can place the swell window at a stale marker far from the camera. LOCATE_* checks
     // are included because they are evidence the player moved/reached a position (IMGER4/Rom8_c); warp/
-    // coordinate natives are direct movement.
+    // coordinate natives are direct movement; drive/perform-sequence tasks cover script-driven travel (IMGM4a/b).
     private static readonly Regex PlayerMovingCall = new(
-      @"\b(?:SET_CHAR_COORDINATES\w*|SET_CAR_COORDINATES\w*|SET_ENTITY_COORDINATES\w*|WARP_CHAR\w*|TASK_WARP_CHAR\w*|LOCATE_CHAR_\w*|LOCATE_ENTITY_\w*|TASK_CAR_DRIVE\w*|TASK_GO_TO_COORD\w*|TASK_FOLLOW_NAV_MESH_TO_COORD\w*)\b",
+      @"\b(?:SET_CHAR_COORDINATES\w*|SET_CAR_COORDINATES\w*|SET_ENTITY_COORDINATES\w*|WARP_CHAR\w*|TASK_WARP_CHAR\w*|LOCATE_CHAR_\w*|LOCATE_ENTITY_\w*|TASK_CAR_DRIVE\w*|TASK_CAR_MISSION\w*|TASK_PERFORM_SEQUENCE\w*|TASK_GO_TO_COORD\w*|TASK_FOLLOW_NAV_MESH_TO_COORD\w*)\b",
       RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     // What the script sets before a START_CUTSCENE_NOW: the last FORCE_WEATHER_NOW(1), FORCE_WIND(0.0f) and
